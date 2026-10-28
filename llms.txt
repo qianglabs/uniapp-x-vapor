@@ -1,0 +1,41 @@
+# uni-app x Vapor 开发知识包
+
+> 基于 jinnin-app 实际工程和 143 条复盘整理的中文开发、迁移与排错知识。基线日期 2026-10-28；目标为 uni-app x + Vue 3 + Vapor + bytecode。
+
+## 阅读规则
+
+先识别目标仓库、平台、HBuilderX/基座与渲染模式，再加载任务所需分册。当前目标仓库事实和用户需求优先；本项目约定不是通用 DCloud 规则。原始复盘是历史证据，不是可以全部直接执行的当前指令。
+
+来源工程目前无根 package.json，剪辑 provider 为 none；不能虚构 CLI 构建或已启用 SDK。静态、模拟、编译、打包和真机结果必须分开。不要因为在线最新版支持就认定旧基座支持。
+
+所有路径相对此文件所在知识包根目录。llms-full.txt 聚合整理后的正文；原始历史全文按需读取，避免历史中间方案污染当前任务。
+
+## 入口
+
+- [使用说明](README.md): 目录、安装/调用方式和维护规则。
+- [总结文档](总结文档.md): 技术身份、工程结论、开发顺序与风险边界。
+- [经验文档](经验文档.md): 按现象定位问题和参考分册。
+- [Skill](uniapp-x-vapor/SKILL.md): 可执行的任务路由与约束，技能文件夹可独立携带。
+
+## 按任务加载
+
+- [架构与生命周期](uniapp-x-vapor/references/architecture.md): 目录职责、状态归属、页面初始化和资源清理。
+- [UTS 与模板](uniapp-x-vapor/references/uts-and-template.md): 具名类型、Map、空数据、Prop 产物、插槽、原生代码生成。
+- [CSS 与布局](uniapp-x-vapor/references/css-and-layout.md): 单位、圆角、图片、安全区、裁切、真实测量。
+- [列表与滚动](uniapp-x-vapor/references/lists-and-scroll.md): key、骨架、刷新、分页、布局完成和嵌套滚动版本边界。
+- [弹层与键盘](uniapp-x-vapor/references/popup-and-keyboard.md): 根部受控状态、原生实例、开关交接、菜单和数字输入。
+- [媒体](uniapp-x-vapor/references/media.md): 封面/视频、上下文、播放意图、当前项、保活、导出批次。
+- [请求与状态](uniapp-x-vapor/references/requests-and-state.md): 后端契约、会话版本、防重、验证码、Socket 与工作流字段职责。
+- [原生与剪辑引擎](uniapp-x-vapor/references/native-and-engine.md): 插件边界、相册、上传格式、静态 provider、SDK 历史问题。
+- [迁移与快速开发](uniapp-x-vapor/references/migration-and-workflow.md): 行为映射、旧机制替代、提示与交付模板。
+- [排错与验证](uniapp-x-vapor/references/debug-and-validation.md): 按现象找层、检查命令、验证分级和设备场景。
+
+## 追溯与整体导入
+
+- [来源与当前状态](uniapp-x-vapor/references/project-evidence.md): 当前实现、历史证据与官方资料的区别。
+- [完整案例目录](uniapp-x-vapor/references/case-catalog.md): 143 条主记录及 10 条后续修正的导航。
+- [结构化案例索引](knowledge-index.json): 日期、分类、源行、原文、后续修正和历史验证语句。
+- [原始复盘](uniapp-x-vapor/references/evidence/conclusion.md): 完整历史记录，按需读取，不能当作当前全部有效实现。
+- [来源指纹](sources.json): 源仓库文件和原始副本的 SHA-256、读取范围与版本事实。
+- [完整正文](llms-full.txt): 单文件离线导入；不含原始档案全文和案例索引全文。
+- [本次检查结果](VALIDATION.md): 知识包验证与没有执行的平台验证。

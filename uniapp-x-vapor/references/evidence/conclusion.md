@@ -1,0 +1,1501 @@
+# 项目问题复盘
+
+本文件只记录用户明确表示结果不满意并要求继续修改后，已经查明根因且完成修正的问题。它不是普通开发日志，也不记录尚未验证的猜测。
+
+## 使用规则
+
+1. 每次开发、修复或迁移任务开始前，先按页面、组件、功能和错误关键词检索本文件。
+2. 用户只是补充新需求时不记录；同一根因重复出现时更新原记录，不制造重复条目。
+3. 完成修正后、最终回复前追加记录；没有验证结果时明确写“待真机/联调验证”。
+4. 只记录可复用的根因和预防规则，不写 token、密钥、身份证、支付或其它敏感数据。
+5. 若结论形成新的全局硬规则，应同时更新 `AGENTS.md` 或 `docs/uniapp-x-vapor-rules.md`。
+
+## 记录模板
+
+```markdown
+## YYYY-MM-DD — 功能/问题简述
+
+-   **任务范围**：涉及的页面、组件或功能。
+-   **不满意表现**：用户看到的具体问题，不写笼统的“效果不好”。
+-   **根因**：代码、架构、需求理解、兼容性或验证流程中的真实原因。
+-   **正确处理**：最终采用的修改方式，以及为什么符合当前 Vapor 架构。
+-   **预防规则**：以后遇到相似任务必须执行的搜索、检查或实现约束。
+-   **验证结果**：实际运行的检查、平台和仍待确认事项。
+-   **关联文件**：本项目中的相关路径；参考项目路径只用于定位。
+```
+
+## 已确认结论
+
+## 2026-10-23 — 多数据预览误将控制区一起放进轮播
+
+-   **任务范围**：资产多数据预览及混剪结果逐项预览。
+-   **不满意表现**：滑动媒体时，进度条和下载等操作按钮也跟着整页切换；用户要求只切换画面，下面共用一套控制区。
+-   **根因**：第一次拆分把媒体、进度和操作栏作为完整单页一起放入 `SwiperViewer`，把“多数据媒体预览”错误实现为“完整预览页轮播”。
+-   **正确处理**：内部 `content.uvue` 只保留媒体、计数和播放器事件，控制条与操作栏移到轮播外，由外层唯一的 `useMediaPreviewPlayback` 持有。切换时重置进度与当前时长，静音选择保留，操作绑定当前播放器；事件和播放器引用均按当前页 key 过滤，防止旧视频迟到事件串写。多项预览只激活当前视频，非当前视频卸载原生节点，返回后从零开始。
+-   **预防规则**：轮播拆分前先确认滑动范围，固定工具栏、进度条和导航不应因媒体切换而重复创建；共用控制区必须同时处理当前播放器引用交接、进度重置和旧事件过滤。
+-   **验证结果**：内存执行实际控制器及预览脚本，验证媒体区独立轮播、进度归零、时长切换、旧页事件丢弃、播放/重播指向当前播放器、静音保留、图片切换和下载目标；定点结构与差异检查通过。按用户要求未构建、未执行 UTS 或页面样式验证；App 的实际滑动、播放器节点交接和全屏返回仍需真机确认。未创建临时脚本。
+-   **关联文件**：`pages/library/component/AssetPreview/index.uvue`、`pages/library/component/AssetPreview/content.uvue`、`pages/library/component/AssetPreview/types.uts`、`docs/functional-pipelines.md`。
+
+## 2026-10-23 — 创作记录多视频解析读取缺失地址导致整页失败
+
+-   **任务范围**：素材库创作记录的普通输出与混剪 `VideoList` 输出归一化。
+-   **不满意表现**：工作流列表请求正常，页面持续展示“加载失败，请重试”，控制台报告 `Cannot read properties of undefined (reading 'length')`；报错位置指向 `loadRecords` 的 catch 日志。
+-   **根因与证据**：新增数组解析先将对象映射成 `value.url`，再直接使用 `value.length` 过滤。对象没有地址时映射结果为 undefined，可以在内存中复现与用户相同的异常；分页请求与归一化共用 catch，使处理异常也显示为列表加载失败。尚未取得用户实际响应和完整原始堆栈，不能断言缺失地址是其真实数据中的唯一触发条件。
+-   **正确处理**：输出数组按实际返回值逐项检查，只对字符串地址读取 length；查找封面时跳过空项。混剪解析遍历实际输出 key，空数组先判断长度再读取首项；名称、时间缺失使用已有占位语义。保留错误状态恢复与异常日志，不跳过整条记录或吞掉错误。
+-   **预防规则**：扩展工作流输出对象数组时，先验证地址字段存在且为字符串，不能把类型声明当作运行期字段一定存在的保证；测试必须包含普通记录、空输出、混剪多输出和缺失地址项。catch 日志位置不等于实际异常发生位置。
+-   **验证结果**：内存执行实际归一化函数，复现旧数组处理异常，并通过无输出、普通视频数组、两个混剪视频、空混剪数组、缺失地址/名称/时间以及数字 dataType 六组场景。Prettier 与差异空白检查通过，未创建临时脚本；按用户要求未执行构建、UTS 或样式验证，真实接口返回及 App 列表恢复仍需联调确认。
+-   **关联文件**：`pages/library/composables/useLibraryWorkspace.uts`、`docs/conclusion.md`。
+
+## 2026-10-19 — 美摄完整 Demo 体积收缩为视频轨道编辑子集
+
+-   **任务范围**：`pages/clip` 与 `uts-meishe-basic` 原生库、清单、素材和构建缓存。
+-   **不满意表现**：完整 SdkDemo 体积过大，当前阶段只需要导入视频后进行视频轨道编辑。
+-   **根因**：完整 Demo 把模型、字体、音乐和特效等约 127.2 MiB 可选 assets 一并打入主 AAR，同时插件目录积累了本机原生构建缓存。运行库大小、源码目录大小和最终 APK 大小属于不同统计口径。
+-   **正确处理**：收缩为视频导入、预览、单视频主轨多片段排序/裁切/分割/复制/删除和导出，复用官方交互；删除完整 Demo 可选素材、收窄清单与权限、启用主模块 R8，并保留 UTS/系统页面/Fragment/JNI 必要规则。保留公共模块引用和两个 ABI 的原始 SDK，清理原生 build/.gradle 缓存，不通过丢弃 ABI 隐藏体积成本。
+-   **预防规则**：按当前能力阶段接入页面和素材；新增能力逐项补齐依赖。体积报告分别说明本地运行库、源码/缓存目录和同口径验证 APK，不把缓存清理称为 APK 优化，也不把临时宿主 APK 当业务基座。裁剪后必须检查系统创建的页面、Fragment、缩略图、权限与导出链路，不能只隐藏菜单。
+-   **验证结果**：Gradle/R8 和 Kotlin 桥接编译、页面模板/状态模拟、Prettier、菜单映射及本地库无重复类检查通过。主 AAR 约 110.8→4.16 MiB，本地运行库约 141.2→34.6 MiB；同配置临时验证 APK 约 136.0→28.7 MiB，清单/资源/DEX 合并打包成功，无可选 assets，双 ABI 均保留。SDK JAR/SO 哈希未变；插件目录清理后约 53.5 MiB。临时验证工程及产物已清理；未安装到手机，真实排序、裁切、分割、导出需重打自定义基座后确认。
+-   **关联文件**：`pages/clip/index.uvue`、`pages/clip/composables/useClipDebug.uts`、`uni_modules/uts-meishe-basic/README.md`、`uni_modules/uts-meishe-basic/native/SdkDemo/app`、`uni_modules/uts-meishe-basic/utssdk/app-android/libs`。
+
+## 2026-10-19 — 美摄预览示例无法覆盖完整剪辑和转场需求
+
+-   **任务范围**：`pages/clip` 与美摄 Android UTS 插件。
+-   **不满意表现**：SDK 初始化和预览示例接入后，用户仍无法使用视频剪辑、转场页面。
+-   **根因**：此前选择原包 `customvideofx` 示例作为入口，该示例只有播放、定位和导出界面。SDK 引擎具有剪辑 API，不代表选中的 Demo 已提供相应编辑交互；页面输入裁切参数也不能替代完整编辑器。
+-   **正确处理**：按用户确认改接原包完整 `SdkDemo` 的 7 个原生模块，以 AAR 和原包辅助库接入 UTS 插件；入口进入官方素材选择与 `VideoEditActivity`，复用片段编辑、转场、音乐和导出页面。仅增加真实宿主上下文初始化、媒体权限入口、缓存导出与会话结果桥接，移除旧示例适配；不替换应用包名、签名或 Application，不传入 License。
+-   **预防规则**：原生编辑 SDK 接入前必须核对目标示例的实际页面、跳转和依赖闭包，区分引擎 API、预览示例、完整 SdkDemo 与商业成品编辑方案。新增原生模块必须同步打包依赖、资源和清单，并重新制作自定义基座；不能以页面语法检查或引擎初始化成功代替完整编辑功能验收。
+-   **验证结果**：7 个官方模块实际 Gradle 构建及原生 Kotlin 桥接编译通过，本地 AAR/JAR 无重复类；临时宿主 APK 的清单、资源、DEX 和原生依赖合并打包成功，未安装到设备，临时工程与产物已清理。页面模板、UTS 语法、Prettier 与无授权初始化/入口/权限拒绝/子页返回/导出/取消/卸载后回调的内存模拟通过。HBuilderX 模块命令返回编译成功，同时提示第三方依赖需本地运行环境或云端自定义基座。完整宿主基座和真机剪辑、转场、声画导出仍需重打基座后验证；未报告设备运行成功。
+-   **关联文件**：`pages/clip/index.uvue`、`pages/clip/composables/useClipDebug.uts`、`uni_modules/uts-meishe-basic/README.md`、`uni_modules/uts-meishe-basic/native/SdkDemo`、`uni_modules/uts-meishe-basic/utssdk/app-android`。
+
+## 2026-10-19 — 美摄调试页选择视频触发 complete 回调桥接异常
+
+-   **任务范围**：`pages/clip` 从相册选择视频的页面调用。
+-   **不满意表现**：SDK 初始化成功，点击选择视频立即出现 `UTSCallback cannot be cast to kotlin.jvm.functions.Function1`，堆栈定位到 `DCloudUniMedia.createUTSChooseVideoOptions`。
+-   **根因**：核对本地当前自定义基座 APK 的媒体桥接，`success`、`fail` 经 `UTSCallback.getFnJS()` 包装后传给原生接口，`complete` 却直接强转为 `Function1`。页面传入 `complete` 后，在创建选择参数时即发生异常，尚未进入系统视频选择器；与美摄初始化、License、视频文件无关。
+-   **正确处理**：移除本次 `chooseVideo` 调用的 `complete`，在具名类型的 `success`、`fail` 分支分别复位 `choosing`；同步异常仍由外层 catch 恢复状态并展示错误。保留选中的原视频、裁切输入初始化、权限用途说明及卸载后旧回调失效检查，不修改原生插件或 SDK。
+-   **预防规则**：Vapor bytecode 出现回调类型转换异常时，沿堆栈核对当前基座的 API 参数桥接；不能仅凭类型声明和编译通过认定所有可选回调都被正确转换。仅用于恢复状态的回调若在当前桥接中不受支持，应在已支持的成功、失败路径完成相同恢复，不能用类型断言掩盖问题。
+-   **验证结果**：页面 UTS 语法与 Prettier、差异空白检查通过；内存执行实际选择函数，验证未传 complete、选择成功、取消、权限失败、用途说明拒绝、同步异常和卸载后迟到回调。临时反编译目录已自动清理，未新增验证脚本或修改生成文件。未重新打包或操作手机选择器，热更新后的真实选视频及后续 SDK 预览导出仍需真机复测。
+-   **关联文件**：`pages/clip/composables/useClipDebug.uts`。
+
+## 2026-10-16 — 原生相册公共路径工具连续触发 iOS 编译错误
+
+-   **任务范围**：`native-album` 三端共用的路径转换工具及 iOS 云打包。
+-   **不满意表现**：首次打包报 Swift 循环体缺少花括号；补齐两处 UTS 循环体后，新日志在生成的 `frameworkPath` 第 308 行报函数未声明 `throws`，云打包仍失败。
+-   **根因**：公共 UTS 工具的单行 `for...of` 在当前编译链中未生成 Swift 循环块；同一文件的 `throw new Error` 又被直接转为 Swift `throw`，但所在函数没有生成 `throws` 声明。外层调用方的 `try/catch` 不能修正被调用函数自身的 Swift 声明。
+-   **正确处理**：保留显式循环块；路径转换前统一校验相册封面、资源缩略图、导出文件和视频封面。越界路径通过已有 `NativeAlbumResponse.error` 返回，同时清空 `albums/assets/file/hasMore`，不在公共工具中抛异常。已核对全部业务读取入口先检查 `response.error` 再展示或上传，正常路径协议与清理限制保持不变；未修改生成的 Swift 或打包配置。
+-   **预防规则**：UTS 插件的跨端公共函数须结合生成 Swift 核对控制块和异常声明；不能仅凭 TypeScript 语法检查判断原生编译可通过。已有具名错误返回契约时优先复用，不能为消除编译错误删除路径校验或把非法路径当作成功结果。
+-   **验证结果**：用户云打包日志与本地生成代码共同确认第 308 行为未声明 `throws` 的函数内抛异常；11 个实际工具源码的内存路径场景通过，覆盖四类正常路径、四类越界路径、空路径、权限及原生错误保留、相似目录前缀和清理限制；源码语法、循环块及无 `throw` 检查通过。按用户要求未执行 HBuilderX 构建、Swift 编译或连接手机，最终 iOS 打包与三端运行仍待确认；无临时脚本留存。
+-   **关联文件**：`uni_modules/native-album/utssdk/paths.uts`、`composables/useNativeAlbum.uts`、`docs/conclusion.md`。
+
+## 2026-10-13 — 升级弹框换行使用当前编译器不支持的属性
+
+-   **任务范围**：合作机构升级确认弹框的完整文本换行。
+-   **表现**：HBuilderX 的 `uni:app-uvue-css` 插件对 `word-break: break-all` 报属性不支持警告。
+-   **根因**：此前根据在线文档加入该属性，没有确认用户当前 App 编译器支持；在线文档中的属性不能直接作为当前运行环境的兼容依据。
+-   **正确处理**：移除 `word-break`，保留外层 text 的明确宽度、`white-space: normal` 和自动高度，以及嵌套 text 的用户名高亮；不替换成其他未确认属性。
+-   **预防规则**：以目标 HBuilderX 的实际编译反馈为准，修复文字换行优先检查宽度、文本流和行数限制；新增平台敏感 CSS 后必须确认当前编译器支持。
+-   **验证结果**：已检索确认本弹框没有剩余 `word-break`，模板解析、Prettier 与差异空白检查通过。未执行 HBuilderX，App 编译警告消失及长用户名实际换行仍待确认。
+-   **关联文件**：`pages/promotion/component/AgencyUpgradePopup/index.uvue`。
+
+## 2026-10-12 — 营销中心 CellList 取数失配与短人员列表抢占滚动
+
+-   **任务范围**：团队、收益明细、直属人员和入驻用户的 CellList 插槽取数及人员滚动边界。
+-   **不满意表现**：改造后团队和收益明细内容没有显示；期望团队随整页滚动，人员可滚动时只滚人员，人员没有滚动空间时滚动整页。
+-   **根因**：调用方使用插槽 index 读取业务数组，没有落实本项目已记录的 itemKey 映射规则，原生回收与数据切换期间不能保证下标对应；人员不足五条也创建原生滚动容器，会接收本应交给页面的触摸。此前仅检查模板编译，没有验证业务行的实际取数和空值状态。
+-   **正确处理**：团队、收益、人员和入驻用户改为 itemKey → Map 查找；团队卡片按可空 Prop 提供安全展示字段；人员五条以内用静态行，超过五条才使用明确高度的 CellList，两种分支复用同一人员行组件。
+-   **预防规则**：封装原生列表的业务插槽必须遵守 key 映射规则，并验证不提供 index 时仍可渲染；父级条件渲染不能替代子组件空值处理；短内容没有滚动空间时不创建内层滚动容器。
+-   **验证结果**：条目模板 SSR 验证没有 index 时团队、收益及备注/金额按 key 渲染；模拟验证 0–5 条静态分支、6–10 条滚动分支和回收期间空数据安全；页面/组件 TypeScript 语义、模板、格式与差异检查通过。未运行 HBuilderX，原生显示、内层滚动及边缘交接仍待真机确认。
+-   **关联文件**：`pages/promotion/index.uvue`、`pages/promotion/component/PromotionTeamCard/index.uvue`、`pages/promotion/component/PromotionMemberRow/index.uvue`、`pages/promotion/component/AgencyPopup/index.uvue`。
+
+## 2026-10-12 — 营销中心团队滚动与整页头部脱离
+
+-   **任务范围**：营销中心 CellList 优化后的整页滚动结构。
+-   **不满意表现**：用户确认是下方我的团队滚动，上方营销中心内容没有一起滚动。
+-   **根因**：优化时使用 ScrollList 承载头部、固定视口高度的 CellList 承载团队，两层分别持有滚动位置，未保证用户要求的整页同步滚动行为。
+-   **正确处理**：整页统一使用一个 CellList，头部展示放入 header 插槽，团队与收益作为独立列表项；人员列表保留最多五行高度，明确设置列表自身高度，并移除没有 scroll-view 祖先的跨层滚动关联。
+-   **预防规则**：列表回收优化前先确认整页滚动还是头部/列表分层滚动；需要整页同步时优先使用原生列表 header，不为复用组件引入额外滚动层。
+-   **验证结果**：模板、格式及差异检查通过，静态确认营销中心只有一个主 CellList，头部与记录属于同一原生列表。未执行 HBuilderX，整页惯性滚动与人员列表手势仍待真机确认。
+-   **关联文件**：`pages/promotion/index.uvue`、`pages/promotion/component/PromotionTeamCard/index.uvue`。
+
+## 2026-10-12 — 营销中心排序滚动和折叠区留白
+
+-   **任务范围**：团队排序、直属人员折叠区、入驻弹框底部提示和收益备注。
+-   **不满意表现**：切换排序改变滚动位置，直属人员不足五行仍出现底部空白，列表存在多余加载完成文案，备注字号和背景不符合要求。
+-   **根因**：排序沿用清空列表的筛选重置流程，原生滚动区域瞬间变短；直属人员容器固定为 240px；列表底部沿用通用完成/手动加载文案，备注仍使用静态标签样式。
+-   **正确处理**：排序保留旧数据与折叠缓存，补齐原加载条数后一次替换，失败按排序首批重试；人员每行 64px、最多五行，按实际人数计算容器高度；仅保留人员空态和加载提示，入驻列表不再显示普通完成/手动加载提示；收益备注用 Rice Text 单行省略，12px 且无背景。
+-   **预防规则**：刷新排序前检查滚动容器是否会因清空列表而截断位置；折叠列表高度按实际内容及上限设置，并核对组件展开后是否恢复 auto 高度；底部状态文案按具体设计保留，不机械复用通用提示。
+-   **验证结果**：内存模拟验证保留三页旧列表、补齐后一次替换、防重复加载及排序失败重试；类型、模板、格式及差异检查通过。未运行 HBuilderX，原生滚动位置、动态折叠高度和备注省略仍待真机确认。
+-   **关联文件**：`pages/promotion/index.uvue`、`pages/promotion/composables/usePromotionPaging.uts`、`pages/promotion/composables/usePromotionCenter.uts`、`pages/promotion/component/AgencyPopup/index.uvue`。
+
+## 2026-10-09 — 提现收款码上传区域横向偏移
+
+-   **任务范围**：微信、支付宝收款账户页面的收款码上传入口及预览。
+-   **不满意表现**：上传区域没有与上方输入内容保持相同的左侧起点。
+-   **根因**：横向表单行中直接放置根节点宽度为 `100%` 的 `UploadFile`，加上固定宽度标签后超出行宽；上传组件内部入口居中，导致图片向右偏移。
+-   **正确处理**：页面使用宽度为 `144rpx`、不可收缩的独立容器承载上传组件，让组件的百分比宽度对应实际上传区域，保持上传入口和图片预览与输入内容左对齐。
+-   **预防规则**：横向标签与上传组件组合时，先检查组件根节点宽度及内部对齐，使用页面容器约束组件占用空间，不通过样式穿透修改公共组件。
+-   **验证结果**：核对上传组件根节点及入口样式，三个提现页面的 Prettier 与差异空白检查通过；未运行 HBuilderX，Android/iOS 实际对齐及图片预览待真机确认。
+-   **关联文件**：`pages/withdraw/payment-account.uvue`。
+
+## 2026-10-09 — App 订单号复制缺少成功反馈
+
+-   **任务范围**：订单列表与订单详情的订单号复制。
+-   **不满意表现**：App 点击复制订单号后没有成功提示。
+-   **根因**：两个入口只调用 `uni.setClipboardData`，没有业务成功回调，依赖 API 默认提示，未保证当前 App 中的可见反馈。
+-   **正确处理**：App 分支关闭默认提示，在剪贴板写入成功回调中显示“订单号已复制”；非 App 保留原处理，空订单号仍不复制。
+-   **预防规则**：关键复制交互需显式处理成功反馈，只在写入成功后提示；自定义提示与 API 默认提示不得重复展示。
+-   **验证结果**：两页 App/Web 分支静态语法解析、格式与差异空白检查通过；未构建，Android/iOS 实际提示待真机确认。未创建临时验证文件。
+-   **关联文件**：`pages/member/order.uvue`、`pages/member/order-detail.uvue`。
+
+## 2026-10-09 — 我的订单 SkipCount 被误当作跳过条数
+
+-   **任务范围**：我的订单列表的首次加载、触底分页与下拉刷新。
+-   **不满意表现**：订单分页请求从 `SkipCount=0` 开始，后续按返回条数累加，未按页码递增。
+-   **根因**：仅凭字段名和 ABP 常见语义推断为跳过条数；接口文档未说明该字段语义，而用户已确认当前订单接口使用从 1 开始的页码。
+-   **正确处理**：`GET /api/app/ai-recharge-order` 的 `SkipCount` 按页码传递；首请求与刷新为 1，成功后下一页加 1。失败不提交页码，保留原订单、下一页位置和旧响应失效控制。
+-   **预防规则**：分页字段含义以当前端点的已确认契约为准，不从字段名、框架惯例或其他端点推断；页码与跳过条数不得混用。
+-   **验证结果**：内存模拟请求验证首请求为 1、连续分页、失败重试同页、刷新回到 1、刷新失败后保留下一页、空页结束和旧响应不覆盖新列表；Prettier 与差异空白检查通过。未执行 HBuilderX 或真实接口联调，App 连续分页与下拉刷新待确认；未创建临时验证文件。
+-   **关联文件**：`pages/member/composables/useMemberOrders.uts`。
+
+## 2026-10-08 — 推广搜索替换组件时误改设计稿外观
+
+-   **任务范围**：营销中心团队搜索与合作机构入驻弹框搜索。
+-   **不满意表现**：要求改用首页同款 `rice-search` 后，搜索框被同步改为首页的方形、14px 字号与默认外围间距，偏离提供的 UI 图。
+-   **根因**：将组件复用理解为整套视觉参数复用，没有保留本次设计稿的外观优先级。
+-   **正确处理**：继续使用 `rice-search`，改为浅灰胶囊外观、30px 高度、12px 字号与灰色搜索图标；通过 `customStyle` 清除组件默认外围 padding，保留页面原有位置、间距与搜索数据绑定。
+-   **预防规则**：替换组件时分别确认组件能力与视觉依据；用户要求使用已有组件不意味着允许覆盖已指定的设计稿外观。
+-   **验证结果**：两处搜索参数和 SFC 模板检查、Prettier 与差异空白检查通过；未执行 HBuilderX，Android/iOS 实际布局与键盘交互待真机确认。
+-   **关联文件**：`pages/promotion/index.uvue`、`pages/promotion/component/AgencyPopup/index.uvue`。
+
+## 2026-09-28 — H5 下载链接在 web-view 内白屏
+
+-   **任务范围**：H5 下载页按钮与下载站点跳转。
+-   **不满意表现**：手机浏览器直接打开 HTTP 下载地址正常，从 HTTPS 注册流程的下载按钮进入 `web-view` 却白屏；改用 HTTPS 地址也无法正常显示。
+-   **根因**：Web 端 `web-view` 使用 iframe，HTTPS 页面不能嵌入 HTTP 下载站；下载站当前 HTTPS 证书已过期且证书域名不匹配。
+-   **正确处理**：下载站修复 HTTPS 前，H5 下载按钮通过浏览器顶层导航直接打开 HTTP 下载页，避免 iframe 混合内容限制；保留注册页到 H5 下载展示页的原入口。
+-   **预防规则**：H5 的外部网页若必须内嵌，先验证目标 HTTPS 证书和 iframe 加载策略；直访正常不能证明 HTTPS 宿主页面内嵌也正常。
+-   **验证结果**：已确认 HTTP 下载页直访可渲染、下载站接口返回 200；Prettier 与差异空白检查通过。手机端按钮跳转仍需实际复测，下载站 HTTPS 证书仍需服务端修复。
+-   **关联文件**：`pages/login/download.uvue`、`docs/conclusion.md`。
+
+## 2026-09-28 — 注册页 logo 裁切与 App 信封过早消失
+
+-   **任务范围**：注册页信封装饰、表单卡片和圆形 logo。
+-   **不满意表现**：圆形 logo 最初被容器裁切；缩小信封并增高头部又改变了卡片位置；恢复后 App 信封在 logo 顶部整行消失，没有延伸到表单卡片后方。
+-   **根因**：logo 最初放在卡片边界外，依赖越界绘制；App 端 `RegisterHero` 只有 `70rpx` 高，信封图片超出组件边界，且全宽的 logo 定位层横跨信封，造成 logo 顶部整行截断。隐藏邀请文字后也没有保留对应的头部布局空间。
+-   **正确处理**：保留 logo 与卡片共用的承载层，logo 定位层收窄到圆形本身；信封保持原尺寸，改为在注册内容层内绝对定位，使自身边界覆盖完整图片，另用 `214rpx` 占位保持卡片位置。卡片从占位后的 `70rpx` 预留区下方开始，按设计稿遮挡信封下部。
+-   **预防规则**：先对照设计稿区分有意叠放和异常裁切；隐藏装饰文案时保留必要布局空间；跨越相邻区块的装饰图应在共同承载层内定位，避免放在过矮组件中依赖越界绘制，也避免全宽透明定位层覆盖背景图。
+-   **验证结果**：已静态确认 logo 定位层宽高均为 `140rpx`，注册头部占位 `214rpx`，卡片承载层预留 `70rpx`，信封组件及图片高均为 `358rpx`；Prettier 与差异空白检查通过。HBuilderX Android/iOS 真机显示仍待验证。
+-   **关联文件**：`pages/login/register.uvue`、`pages/login/style/register.css`、`pages/login/component/RegisterHero/index.uvue`。
+
+## 2026-09-24 — 创作流水线免费体验提示刷新入口遗漏
+
+-   **任务范围**：功能流水线生成按钮的免费体验提示与权限刷新。
+-   **不满意表现**：免费体验提示使用旧的流水线数据；先后尝试任务结束、启动和工作流页返回刷新后，从进度/结果页点击关闭返回创作首页仍没有请求。
+-   **根因**：提示原先复制缓存的 `canFreeTrial` 到独立状态；进度/结果页的关闭事件导航回 `/pages/creation/index`，不是工作流组件的表单切换。创作首页只在 `onLoad` 调用非强制 `load()`，返回首页只触发 `onShow`，因此既没有请求时机，也可能命中旧缓存。强制刷新启动后若普通 `load()` 先检查旧的 `loaded=true`，立即点击功能卡仍会绕过在途请求。
+-   **正确处理**：提示直接跟随流水线目录的 `canFreeTrial`；创作首页每次 `onShow` 强制请求目录，包括首次显示与从进度/结果页返回；目录 `load()` 先等待在途请求，再判断缓存命中，保证立即点击功能卡也用本次刷新结果。工作流页自身从其它页面返回时再刷新；删除任务启动和返回表单的刷新监听，会员中心返回沿用已有的账户与目录联合刷新。
+-   **预防规则**：先沿关闭/返回事件确认实际导航目的地，再把刷新放在目的页面的生命周期；`onLoad` 不等于返回时的 `onShow`，已加载标记也不能代替需要新数据时的强制请求。共享缓存的读取必须先等待在途强制刷新，再使用旧的已加载标记；不要为保险起见给任务状态和表单阶段叠加刷新。
+-   **验证结果**：已静态确认进度/结果关闭都导航回创作首页，首页请求由 `onLoad` 移至 `onShow` 并强制刷新，工作流首次进入仍可共享在途请求或最新目录；差异空白检查通过。按用户要求未构建编译，Android/iOS 真机仍需确认返回后的请求和提示变化。
+-   **关联文件**：`pages/creation/index.uvue`、`pages/creation/component/CreationWorkflowView/index.uvue`、`composables/useCreationPipelines.uts`、`docs/conclusion.md`。
+
+## 2026-09-24 — 从权益弹框进入会员中心后积分进度条偶发无响应
+
+-   **任务范围**：首页和创作页权益弹框跳转会员中心，以及会员中心积分进度条打开充值弹框。
+-   **不满意表现**：从“我的”直接进入会员中心可以点击积分进度条，从其他入口进入时偶尔点击无反应；先前只调整会员接口请求时机未解决。
+-   **根因**：权益弹框的“开通”事件在原生 `page-container` 完整离场前就触发页面跳转，旧页面的弹层可能仍在前景截获点击。进度条处理函数还使用 `onLoad` 保存的页栈下标作为点击前置条件，下标不一致时静默返回，放大了不同入口的行为差异。
+-   **正确处理**：权益弹框先关闭原生容器，收到 `closed` 后再发出跳转事件；进度条直接点击不再检查缓存的页栈下标。按用户要求恢复点击时主动核验会员接口，不在每次点击时显示查询提示，仅在结果失败或非会员时给出提示；异步回调通过页面显隐或当前路由确认归属。
+-   **预防规则**：从原生弹框跳转页面时须等 `closed` 再导航，不能在设置 `show=false` 的同一事件中跳转。页面自身点击不应通过缓存的页栈下标判断页面身份；异步返回再核对当前页面，并避免无提示的拒绝路径。
+-   **验证结果**：已静态核对“我的”、首页、创作页和积分不足弹框的会员中心入口，并完成 Prettier 与差异空白检查；App 原生弹层离场、连续跳转与积分进度条命中仍需真机复测。
+-   **关联文件**：`pages/member/index.uvue`、`pages/main/component/MemberBenefitsPopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-22 — 创作进度百分比在 iOS 被裁切
+
+-   **任务范围**：创作进度页圆环画布与居中百分比。
+-   **不满意表现**：先后尝试响应式字号、画布与文字覆盖层的 `z-index`、百分号右内边距后，iOS 上百分号最右侧仍被裁切一小块。
+-   **根因**：圆环由 `canvas` 绘制、百分比由独立原生 `text` 绘制，形成跨渲染层叠加；iOS 对行末百分号的原生文字测量与裁切发生在 `text` 自身渲染边界内，修改外层层级或增加 CSS 内边距不能稳定改变该字形的原生绘制边界。
+-   **正确处理**：移除圆环上方的百分比 DOM 覆盖层，将数字和百分号用 `measureText` 计算总宽度后通过 `fillText` 绘制到现有 2D Canvas；数字仍为 47px、百分号仍为 21px，并在同一画布中先绘圆环、后绘文字，从结构上消除跨层遮挡和 `text` 字形边界裁切。
+-   **预防规则**：同一视觉控件中的 Canvas 图形与居中文字若在 iOS 出现无法通过盒模型稳定修复的字形裁切，应优先统一到同一 Canvas 绘制链路；连续尝试外层 `z-index`、padding 或 `overflow` 前，先区分问题发生在父容器裁切还是原生文字自身的绘制边界。
+-   **验证结果**：已静态确认百分比 DOM 覆盖层及前两次补偿样式已移除，圆环、数字和百分号均由同一 Canvas 按高清屏比例绘制，进度变化仍触发现有 `draw()`。按用户要求未执行构建编译，iOS 真机显示及字体视觉对齐仍需确认。
+-   **关联文件**：`pages/creation/component/CreationProgressView/index.uvue`、`pages/creation/composables/useCreationProgressCanvas.uts`、`docs/conclusion.md`。
+
+## 2026-09-22 — Vapor 组件封装原生 Waterflow 时数据与 VIEW 生命周期失配
+
+-   **任务范围**：公共 `WaterflowList`、首页模板瀑布流及其他已迁移的瀑布流调用方。
+-   **不满意表现**：首页下拉刷新后读取模板的 `favoriteCount`、`isFavorite` 时出现 `undefined`；第一轮改为按 key 查找后，切换分类或筛选仍出现 `null.name`、数据显示和滚动异常，并继续提示 `Element VIEW ... does not have a native element`。
+-   **根因**：第一轮只处理了插槽下标失配，没有落实 Rice Waterflow 源码已经标注的兼容边界：DCloud issue #29918 对应的 Vapor 模式下，原生 `waterflow` 封装在自定义组件中仍存在问题。跨组件作用域插槽、原生条目回收和业务数据整批替换之间没有稳定生命周期保证；父级 `v-if` 与必填 `TemplateCard.item` Prop 也可能分批更新，使查找结果已经为 `null` 时子组件仍读取 `name`。
+-   **正确处理**：保留公共 `WaterflowList` API，并按本项目固定 Vapor 的事实仅封装 Rice Waterflow，不保留非 Vapor 原生分支。首页和搜索继续按业务 key 查找数据，同时把 `TemplateCard.item` 建模为可空，卡片根节点常驻，内部全部展示字段由安全标量计算属性提供；卡片事件按 key 再次查找并在数据已切换时直接忽略，不再向业务函数传递非空断言结果。
+-   **预防规则**：看到组件库针对当前渲染模式设置的条件编译和已知 issue 时，必须先保持同一兼容边界，不能仅凭内置组件本身支持 Vapor 就推断它可以安全封装进带作用域插槽的自定义组件。跨组件列表卡片的 Prop 必须按更新过程中真实可能出现的可空状态建模，父级条件渲染不能替代子组件边界检查。
+-   **验证结果**：已静态确认 `WaterflowList` 只保留 Rice Waterflow，非 Vapor 原生分支及专用 `appKey` 已删除；首页和搜索的 `TemplateCard` 不再接收非空断言结果，卡片模板不再直接读取可空 `item.name/isFavorite/favoriteCount`；相关引用和差异空白检查通过。未执行构建，Android/iOS Vapor 下连续切换分类、组合筛选、下拉刷新和滚动中切换仍需 HBuilderX 真机确认。
+-   **关联文件**：`components/WaterflowList/`、`pages/main/index.uvue`、`pages/main/search.uvue`、`pages/mine/component/FavoriteWaterfallList/index.uvue`、`pages/mine/component/PublishedWaterfallList/index.uvue`、`pages/publish/component/PublishWorkPickerPopup/index.uvue`、`docs/uniapp-x-vapor-rules.md`、`docs/conclusion.md`。
+
+## 2026-09-22 — 系统分享短文件名路径与媒体参数不兼容 iOS
+
+-   **任务范围**：创作结果页系统分享的临时文件重命名与 `uni.shareWithSystem` 调用链。
+-   **不满意表现**：为避免系统分享显示过长缓存文件名而复制为固定短名称后，iOS 点击分享仍无法拉起系统面板，并提示“系统分享未完成”。
+-   **根因**：第一次修复只规范了 `CACHE_PATH` 分隔符，但仍用目录常量重新构造目标路径；iOS 中 `downloadFile` 返回的可分享临时路径与重新拼接的缓存路径可能采用不同表示，`copyFile` 能读取不代表系统分享层能解析。同时图片和视频都按通用 `filePaths/type=file` 传递，没有遵循系统分享接口的媒体类型与路径字段契约。
+-   **正确处理**：继续复制为 `AI作品.ext` 保留短名称，但目标路径改为直接取 `downloadFile.tempFilePath` 的同级目录，继承已验证可分享的路径协议；图片使用 `type=image + imagePaths`，视频使用 `type=video + videoPaths`，用户主动取消不再显示失败提示。下载与分享仍使用各自独立的 loading 状态。
+-   **预防规则**：本地文件经过文件系统 API 再交给原生消费 API 时，必须保持来源 API 返回的路径协议，不能仅凭文件操作成功推断另一原生模块也能解析；系统分享媒体必须按真实类型使用对应 `type` 和 `imagePaths/videoPaths`，并区分用户取消与真正失败。
+-   **验证结果**：已静态确认短名称文件与下载临时文件位于相同目录并沿用同一路径表示，图片和视频分别传入匹配的系统分享字段，取消错误码 `1310600` 不再提示失败；相关文件通过差异空白检查。按用户要求未执行构建编译，iOS/Android 系统分享面板和目标应用接收结果仍需真机确认。
+-   **关联文件**：`composables/useSystemShare.uts`、`docs/conclusion.md`。
+
+## 2026-09-21 — 全屏媒体预览混用原生控制条与自定义点击状态
+
+-   **任务范围**：统一媒体全屏预览页、公共 `MediaViewer` 的视频封面与中间播放按钮，以及素材库预览和使用模板页进入、离开子页面时的封面衔接。
+-   **不满意表现**：全屏预览改用公共 Navbar 和外置播放按钮后，点击画面不能暂停或继续播放；iOS 播放过程中出现封面铺满闪烁；Navbar 标题仍显示默认颜色；后续素材库点击进入预览仍会短暂显示铺满的视频画面，从全屏返回素材库预览后仍存在封面缺失。排查发现使用模板页具备相同风险；恢复原生 controls 后，又无法同时满足画面单击播放/暂停与底部控制栏操作；页面控制栏贴近系统底边时，拖动进度还会触发系统切换 App 手势，素材库预览的静态进度条也无法拖动；改为 slider 后 Web 仍采用过大的原生默认滑块尺寸，且全屏控制栏底部没有留白。
+-   **根因**：全屏页同时传入 `controls=true` 和 `tapToPlay=true`，但公共媒体组件为避免原生控制条与根点击重复处理，在 controls 开启时不会执行根点击播放切换。视频封面仍通过原生 video 的 `poster` 或 video 子节点显示，iOS 在启动和暂停阶段会重新绘制 poster，且原生子树中的普通覆盖节点坐标、层级不稳定。Navbar 的动态颜色被传给 `rice-text` 组件根节点，没有作用到内部真实 text。素材库和使用模板页虽然正确取得 `coverUrl`，但内部预览都显式设置 `videoPreview=false`；使用模板页还把 active 固定为 true，页面隐藏后原生视频表面即使被系统回收，也不会进入组件的显隐恢复链路。
+-   **正确处理**：全屏预览关闭原生 controls，统一使用 `tapToPlay` 和公共中间播放按钮处理画面单击；页面底部控制栏复用 `useMediaPreviewPlayback`，播放按钮、画面点击、进度拖动和原生事件共同读写同一个 `MediaViewer` 实例，不再让原生 controls 与覆盖点击层竞争。App 控制栏通过独立固定占位进一步远离系统底部手势区，再叠加平台安全区，不使用 `calc()`；Web 使用独立底部占位保留操作留白。素材库预览把只读宽度进度改为同一控制器驱动的 slider，保留轨道和拖动命中范围但把 thumb 设为透明，并将 Web 仍会读取的原生 `block-size` 固定为允许的最小值 12。封面与按钮都作为 `MediaViewer` 根层兄弟覆盖节点，不再嵌套在原生 video 中，首个有效播放进度后只撤下独立封面，暂停不会重新显示。Navbar 继续复用公共组件，通过 title 插槽直接渲染白色标题文本。素材库和使用模板页的内部视频预览仅在 `coverUrl` 非空时启用同一独立封面层，使首次进入及从子页面返回的播放器恢复阶段都有封面衔接；使用模板页由 `onShow/onHide` 驱动 active，不恢复原生 poster、延时补播或节点重建。
+-   **预防规则**：同一视频场景只能有一套播放状态和命令负责方；需要“控制栏 + 画面单击”时，控制栏和点击层必须共同调用同一个播放器控制器，不能同时启用原生 controls 和覆盖全屏的自定义点击层。App 原生 video 的封面和业务按钮应放在媒体根容器覆盖层，不把普通视图嵌入 video 子树，也不依赖原生 poster 承担跨页面封面状态。存在页面隐藏/显示的预览调用方不能把 active 固定为 true，也不能在已有有效封面时关闭 `videoPreview`，必须检查进入、返回和首个有效进度之间的完整状态链。组件包装层无法把动态文字样式传到内部 text 时，业务特例应使用已提供的具名插槽，不修改第三方组件。
+-   **验证结果**：已静态确认全屏页 `controls=false`、`tapToPlay=true`，画面点击与页面控制栏使用同一个 `MediaViewer` 引用，控制栏已连接播放/暂停、当前时间、总时长和进度拖动；App 控制栏下方同时存在固定手势间距和安全区占位，Web 存在独立底部占位。素材库预览已移除只读进度宽度计算，slider 的 changing/change 连接同一 seek 控制器、thumb 透明且 `block-size=12`；封面和播放按钮均位于 video 结束标签之外。素材库预览的 `coverUrl` 同时传给内部播放器和全屏载荷，素材库与使用模板页都只在视频封面非空时启用独立封面；使用模板页 active 已接入 `onShow/onHide`；Navbar 标题颜色直接声明在真实 text class。相关差异通过空白检查。按用户要求未执行构建编译，Web 的 slider 命中范围和底部留白、Android/iOS 的进度拖动、系统手势避让、自动播放结束重播及安全区位置仍需实际运行确认。
+-   **关联文件**：`pages/media/preview.uvue`、`pages/library/component/AssetPreview/index.uvue`、`pages/useTemp/index.uvue`、`components/MediaViewer/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-21 — 搜索收藏参数与素材添加弹框高度失配
+
+-   **任务范围**：首页搜索结果的模板收藏，以及素材库管理模式下的“添加至”弹框。
+-   **不满意表现**：搜索结果点击收藏时接口路径取不到模板 ID；“添加至”弹框虽然被移动到批量工具栏上方，但原生弹框显示高度与内容位置不一致。
+-   **根因**：搜索页仍按旧接口签名传递两个位置参数，而当前 `setWorkflowTemplateFavorite` 只接收 `FavoriteTemplateQuery`，导致函数内部读取 `query.templateId` 时得到空值。“添加至”则把工具栏偏移作为 `bottom` 写在弹框面板上，只改变可见位置但不参与 `page-container` 的内容高度测量，形成视觉位置与原生容器边界失配。
+-   **正确处理**：搜索页与首页统一传入 `{ templateId, isFavorite }`；“添加至”改为透明的高度占位容器包裹白色业务面板，把工具栏高度和底部安全区作为 `padding-bottom` 纳入原生测量，业务面板保持在批量工具栏上方，不修改公共 `Popup` 或 `uni_modules`。
+-   **预防规则**：调用领域 API 前必须按当前具名参数类型检查全部调用方，不能保留旧的位置参数写法；底部原生弹框需要避让常驻工具栏时，偏移必须参与弹框内容高度测量，禁止仅通过 `bottom` 或 `transform` 移动内容节点。
+-   **验证结果**：已静态核对全部模板收藏调用均使用 `FavoriteTemplateQuery`；已确认“添加至”不再传递 `bottom` 自定义样式，透明占位与白色面板处于同一正常布局流，并完成差异和空白检查。按用户要求未执行构建编译，Android/iOS Vapor 的实际弹框高度、遮罩和安全区仍需真机确认。
+-   **关联文件**：`pages/main/search.uvue`、`pages/library/component/AssetDestinationPopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-21 — 公共视频缓冲提示未区分列表与预览场景
+
+-   **任务范围**：公共 `MediaViewer` 的视频缓冲反馈，以及首页、素材预览、生成结果、独立媒体预览和使用模板预览调用方。
+-   **不满意表现**：新增 `waiting/progress` 缓冲状态后，首页瀑布流视频也显示了 loading；预览中的 loading 带固定尺寸深色背景，视觉过重，使用模板的大图预览又需要保留缓冲提示。
+-   **根因**：缓冲提示直接绑定公共播放器状态，没有由调用方声明展示场景，导致列表自动播放和大图预览共享同一套反馈样式。
+-   **正确处理**：为 `MediaViewer` 增加默认关闭的 `showBufferingLoading` 参数；首页卡片不传该参数，素材预览、生成结果、独立媒体预览和使用模板预览显式开启。缓冲层只保留居中的 18px loading，移除背景、固定宽高和额外包裹节点，不改变 `waiting/progress` 状态、自动播放或错误恢复链路。
+-   **预防规则**：公共媒体组件的缓冲反馈必须由业务场景显式开启，列表自动播放默认不展示，沉浸式或大图预览按需开启；调整反馈视觉时只修改展示层，不把 loading 显隐反向用于播放器重建、补播或失败判断。
+-   **验证结果**：已静态检索全部 `show-buffering-loading` 调用，确认仅四个预览入口开启、首页未开启；已检查 Prop 默认值、缓冲条件和样式残留，相关文件通过 `git diff --check`。按用户要求未执行构建，Android/iOS 的弱网缓冲事件与 loading 显隐仍需 HBuilderX 真机确认。
+-   **关联文件**：`components/MediaViewer/index.uvue`、`components/MediaViewer/types.uts`、`pages/library/component/AssetPreview/index.uvue`、`pages/creation/component/CreationResultView/index.uvue`、`pages/media/preview.uvue`、`pages/useTemp/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-21 — 瀑布流请求完成与首屏布局完成之间出现空白
+
+-   **任务范围**：我的已发布/收藏瀑布流、首页模板瀑布流、发布作品选择弹框及 Rice Waterflow 首屏布局反馈。
+-   **不满意表现**：首次骨架结束后会短暂显示空白，随后真实卡片才出现；发布作品列表最明显，其他采用列表外覆盖骨架的瀑布流存在同样时序风险。
+-   **根因**：页面直接使用请求 `loading` 控制骨架，而 `rice-waterflow-item` 在内部 `ready=false` 或尚未取得布局坐标时会保持透明。接口完成、数据提交和 `loading=false` 早于子项异步测量与排版完成；现有 `relayout()` 只启动排版且不返回完成信号，因此请求态与可见态之间存在空档。
+-   **正确处理**：Rice Waterflow 在现有布局真正完成后新增只读 `layoutcomplete` 事件并携带当前条目数，不改变排版算法。采用列表外覆盖骨架的四个调用方分别保存首屏布局状态，只有事件条目数与当前业务条目一致后才撤下骨架；空结果仍按请求完成进入空态，已有内容的刷新和分页不重新覆盖骨架。
+-   **预防规则**：列表外骨架不能仅绑定请求状态；当真实列表会在测量期间隐藏子项时，骨架必须覆盖到当前数据集布局完成。禁止使用固定延时猜测原生布局完成时间，完成信号需要携带可校验的数据版本或条目数，避免旧布局事件提前关闭新数据骨架。
+-   **验证结果**：已静态确认布局事件仅在 `ready=true` 后发出，首页、已发布、收藏和发布选择弹框均按当前条目数接收事件；请求失败或空结果不会被布局状态阻止。已执行相关脚本语法、事件引用和差异空白检查；按用户要求未构建，Android/iOS Vapor 首次进入、筛选切换、弹框首次打开及弱网返回仍需 HBuilderX 真机确认。
+-   **关联文件**：`uni_modules/rice-ui/components/rice-waterflow/rice-waterflow.uvue`、`pages/main/index.uvue`、`pages/mine/component/PublishedWaterfallList/index.uvue`、`pages/mine/component/FavoriteWaterfallList/index.uvue`、`pages/publish/component/PublishWorkPickerPopup/index.uvue`、`docs/uniapp-x-vapor-rules.md`、`docs/conclusion.md`。
+
+## 2026-09-20 — 素材继续创作加载状态在 Vapor 模板中未定义
+
+-   **任务范围**：素材预览和创作记录操作弹框新增“继续创作”入口后的加载状态绑定。
+-   **不满意表现**：页面打开或操作渲染时抛出 `continuing is not defined`，新增入口无法稳定展示。
+-   **根因**：组件通过 `const props = withDefaults(defineProps<...>())` 持有属性对象，但新增模板表达式仍裸读 `continuing`；当前 `.uvue` Vapor 模板降级没有为该新增名称生成独立 setup 绑定，运行时因此按未定义变量读取。
+-   **正确处理**：两个受影响组件的模板统一显式读取 `props.continuing`，操作弹框的新增禁用条件同时改为 `props.continueDisabled`；脚本中的加载互斥和事件门禁继续使用同一个 props 来源。
+-   **预防规则**：在 `.uvue` + Vapor 组件已经显式保存 `defineProps()` 返回值时，新增 prop 的模板绑定也应使用 `props.xxx`，不要混用裸 prop 名称；修复一个未定义 prop 时同步检索本次新增的其它模板 prop。
+-   **验证结果**：已确认两个组件模板不存在裸 `continuing` 或裸 `continueDisabled` 读取，并通过本次文件的格式与差异检查。按用户要求未执行构建、UTS 或页面样式验证，App 端模板降级结果仍需 HBuilderX 真机确认。
+-   **关联文件**：`pages/library/component/AssetPreview/index.uvue`、`pages/library/component/RecordActionPopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-20 — 文件夹跟随菜单点击后没有显示
+
+-   **任务范围**：素材库文件夹弹框中的“更多”按钮、目标元素测量及行旁 `page-container` 操作菜单。
+-   **不满意表现**：文件夹操作改为跟随元素对齐的 `page-container` 后，点击“更多”按钮没有可见响应；改为直接测量点击元素后又抛出 `uni.upx2px is not a function`。
+-   **根因**：第一处阻断是菜单显示被放在 `createSelectorQuery().in(componentInstance)` 的动态 ID 查询回调之后；App Vapor 的弹框滚动容器中一旦查询不到节点或返回空结果，函数会直接结束，`menuVisible` 从未更新。第二处是从关联项目迁移位置计算时照搬了传统 uni-app 的 `uni.upx2px`，当前 uni-app x 工程实际统一使用 `uni.rpx2px`，因此测量成功后在尺寸换算阶段直接抛错。菜单原生容器也只设置宽度，没有显式高度，仍存在内容首次测量为 0 的风险。
+-   **正确处理**：保留按钮 ID，通过点击事件的 `currentTarget` 直接取得当前 `UniElement`，使用 `getBoundingClientRectAsync()` 获取边界，不再二次按字符串查找节点；所有 rpx 到 px 的换算统一改为项目现有的 `uni.rpx2px`；位置计算完成后为跟随菜单的 `page-container` 同时设置明确宽高，再打开受控显示状态。原有上下空间判断、透明遮罩关闭及离场后触发重命名/删除保持不变。
+-   **预防规则**：点击目标本身已经提供 `currentTarget` 时，App Vapor 的行旁弹层优先直接测量该元素，不再把字符串选择器查询作为菜单显示的唯一前置条件；迁移传统 uni-app 的尺寸换算时必须先检索当前 uni-app x 项目 API，用 `uni.rpx2px`，禁止照搬 `uni.upx2px`；小型原生弹层同样应给容器明确宽高，不能只依赖子树回传尺寸。
+-   **验证结果**：已静态确认点击事件显式传入 `$event`，旧 `createSelectorQuery`、组件实例查询和 `uni.upx2px` 已移除，菜单只在当前元素异步测量仍有效时打开，并完成格式与差异检查。按用户要求未执行构建、样式或 UTS 检测；Android/iOS Vapor 的实际点击、跟随位置与连续开关仍需真机确认。
+-   **关联文件**：`pages/library/component/AssetFolderPopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-20 — 公共弹框原生实例复用与键盘职责混杂
+
+-   **后续状态（2026-10-14）**：用户持续反馈蒙层显示但内容不可见，先挂载再显示、离场后销毁的方案未验证为最终修复；此前 Android 12 和零高度的判断不能解释所有后续表现。按用户本次选择，App 改为原生容器与插槽常驻、`show` 控制显隐，并记录开发环境原生事件和面板边界；非 App 保留按需挂载。关闭期间重开由阶段与请求版本处理，组件卸载后取消待执行任务。实际源码的 12 个内存生命周期场景通过，组件格式、SFC 解析及差异空白检查通过；未运行 HBuilderX 或连接手机。本次是针对反复创建/销毁链路的优化，原生附着异常的具体根因和最终效果仍待真机日志确认，不作为已修复结论。
+
+-   **任务范围**：公共 `Popup` 的原生容器生命周期、尺寸传递和键盘职责，以及一键换装流水线中动作、服装和上传来源弹框的连续操作。
+-   **不满意表现**：更新 HBuilderX 后切换创作页出现 `UTSCallback cannot be cast to java.lang.Number` 的卸载异常；一键换装中连续切换动作和服装时，弹框偶发没有反应或只显示内容没有遮罩，随后点击页面返回区域可能反而触发上传来源弹框。迁移到 `page-container` 后又出现只有遮罩、内容区域不显示，以及嵌套上传来源弹框的遮罩没有完整盖住父弹框。首次改为离场后动态换 key 重建，仍偶发只有蒙层。
+-   **根因**：新版 uni-app x 的 `uni.onKeyboardHeightChange` 返回数字监听 ID，`uni.offKeyboardHeightChange` 接收该 ID，公共弹框仍传入回调对象，因此卸载时发生原生类型转换异常。弹框空内容是另一条链路：Android 12 上底部 `page-container` 先根据自身 `auto/min-height` 完成原生层测量，复杂子树高度回传偶发未触发重排，因此遮罩已创建但内容容器为 0 高度。真机连续关闭和重开还确认，同一个原生 `page-container` 实例离场后可复用已释放内容层的状态。首次修复虽然分离了业务 `show`，但在 `afterleave` 中修改动态 key，并只等待一个 `nextTick` 就重新显示；该时序只能确认 Vapor 已提交更新，不能确认新的原生内容树完成挂载，蒙层仍可能早于插槽内容创建。单纯改动画时长、`z-index`、直接插槽层级、动态 key 或只设 `min-height` 都不能消除这两条链路。
+-   **正确处理**：公共 `Popup` 将外部业务 `show`、原生节点 `containerMounted` 和原生显示 `containerVisible` 分离。每次打开先通过 `v-if` 挂载一个 `show=false` 的完整 `page-container` 与插槽内容，下一渲染阶段才设置显示；完整离场后进入独立重置阶段并卸载原生节点，下一次渲染提交完成后才读取最新显示意图，避免 `closed` 中立即重开把卸载和挂载合并。关闭期间的新打开请求通过版本号保留，并在卸载后重新执行挂载、显示流程。重复或迟到的 `afterleave` 在非离场状态下直接忽略，系统返回仍在 `beforeleave` 同步受控状态。固定高度的使用模板主弹框和上传规则弹框把 `820rpx/980rpx` 业务内容高度加当前设备底部安全区后，以明确 px 高度同时传给原生容器，不再只设置内容子树；上传来源弹框继续使用明确高度。公共弹框不承担键盘监听，需要键盘联动的编辑面板由 `KeyboardPanel` 负责；未修改 `uni_modules/`。
+-   **预防规则**：App + Vapor 重型底部弹层在 Android 上必须给 `page-container` 自身明确高度，不只给内容子树 `height/min-height`。如果空弹层只在关闭后重开出现，要区分业务显示意图、原生节点挂载和原生显示三个状态：打开必须先挂载内容再显示，完整离场后再卸载；禁止用动态 `key + nextTick` 在同一更新链中重建并打开。异步显隐任务必须带请求版本，迟到的离场事件不得修改新实例。通用弹框不承担键盘监听和避让，需要键盘联动时使用独立 `KeyboardPanel`。
+-   **验证结果**：此前已在 HONOR Android 12 真机确认问题包含“原生内容高度为 0”和“离场期间重开后只剩蒙层”两条链路；首次动态 key 方案经后续使用确认仍未解决偶发现象。本轮已静态确认公共 `Popup` 先挂载后显示、离场后卸载、显隐请求版本保护、重复离场回调防护及固定高度转发；按用户要求未执行构建编译，Android 12 连续开关、关闭动画期间重开、系统返回和嵌套弹框仍需重新真机确认。
+-   **关联文件**：`components/Popup/index.uvue`、`components/UploadFile/index.uvue`、`components/UploadFile/types.uts`、`components/UploadFile/uploadSourcePopup.uvue`、`pages/creation/component/CreationWorkflowView/index.uvue`、`pages/creation/component/CreationSourcePopup/index.uvue`、`pages/creation/component/CreationSettingsPopup/index.uvue`、`pages/main/component/MemberBenefitsPopup/index.uvue`、`docs/uniapp-x-vapor-rules.md`、`docs/conclusion.md`。
+
+## 2026-09-17 — 上传素材名称应自动生成而非截断
+
+-   **任务范围**：公共 `UploadFile` 上传后创建素材库资产的 `name` 参数。
+-   **不满意表现**：为避免名称过长而截断原始文件名，不符合用户要求的重新命名方式。
+-   **根因**：把名称长度问题仅作为字符串裁剪处理，并在接口未声明上限时引入了自行设定的长度常量，未明确区分原始文件名、素材展示名与 OSS 对象名。
+-   **正确处理**：删除名称截断、长度常量和代理对裁剪逻辑；素材展示名按“image／video + 下划线 + 年月日时分秒”直接生成，默认文件名与封面回退名称统一使用英文；原始文件名保持不变，OSS 对象继续采用 GUID 文件名。
+-   **预防规则**：名称过长时先确认业务命名方式，不把未确认的长度限制当作后端契约；展示名称与对象存储文件名分别处理。
+-   **验证结果**：Node 模拟覆盖图片、视频及空名、超长名、emoji 名，确认生成名称为 20 个 ASCII 字符且不依赖原始名称，URL、视频封面及非入库上传分支保持不变。未构建编译，App/H5 实际上传入库待联调确认。
+-   **关联文件**：`components/UploadFile/index.uvue`；本轮未修改 `composables/useOssUpload.uts` 的 GUID 命名。
+
+## 2026-09-17 — 启动授权协议查看方式偏离参考项目
+
+-   **任务范围**：Android 启动授权页的协议入口。
+-   **不满意表现**：协议点击后读取本地 HTML 并手工转换文本，增加了不需要的读取、转换及加载状态。
+-   **根因**：将“授权前禁止业务请求”扩大为禁止用户主动查看在线协议，没有按关联项目的在线链接行为区分协议访问与业务初始化。
+-   **正确处理**：复用现有在线法律页，移除文件读取、HTML 转换和内嵌详情状态；业务请求与 Socket 门禁保持不变。
+-   **预防规则**：授权启动流程分别明确协议查看、业务接口请求和实时连接的边界；复用已有协议入口，不自行增加内容读取流程。
+-   **验证结果**：已核对参考项目链接与现有法律页地址一致；未进行构建，Android 授权前 WebView 加载、返回授权页和真实网络行为仍待真机及合规验证。
+
+## 2026-09-16 — 邀请二维码保存后图片空白
+
+-   **任务范围**：我的页面邀请码二维码弹框、Rice 二维码画布导出及相册保存。
+-   **不满意表现**：二维码在弹框内可以正常显示，相册保存动作也能完成，但保存后的图片内容为空白；问题不在相册权限或保存 API 链路。
+-   **根因**：邀请码弹框只在显示时挂载 `rice-qrcode`，同时开启 `auto-export`。弹框打开动画、原生画布创建和二维码绘制处于同一阶段，组件绘制结束后立即对根节点执行 `takeSnapshot`，此时可见布局尚未稳定，得到的临时文件可能是空白快照；后续保存只是正确保存了这个空白文件。
+-   **正确处理**：取消打开阶段的自动导出，仅使用 `complete` 标记二维码已经绘制；用户点击下载并完成权限说明后，通过组件公开的 `getTempFilePath()` 对当前稳定显示的二维码主动截图，再把该文件交给 `uni.saveImageToPhotosAlbum`。导出失败时停留在弹框并给出提示，不进入相册保存。
+-   **预防规则**：弹框动画中的 Canvas 不得把挂载时自动快照直接作为最终下载文件；界面可见内容与导出内容共用画布时，应先确认绘制完成，再在用户操作时从稳定节点主动导出。相册保存成功但文件空白时，先检查传入文件的生成时机和内容，不要优先改权限或下载链路。
+-   **验证结果**：已静态确认邀请码二维码不再使用 `auto-export`，保存按钮只在绘制完成后启用，App 保存前会重新获取当前二维码快照，空路径不会调用相册保存。已执行相关文件差异、类型引用和空白检查；按用户要求未构建，Android/iOS 弹框动画后保存的实际图片内容仍需真机确认。
+-   **关联文件**：`pages/mine/component/InviteQrPopup/index.uvue`、`pages/mine/component/InviteQrPopup/types.uts`、`pages/mine/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-16 — 上传弹框状态归属与原生列表入口事件失配
+
+-   **任务范围**：功能流水线素材选择器、素材库上传入口、公共上传器及上传来源弹框。
+-   **不满意表现**：功能流水线的“上传素材”来回打开、关闭后偶发点击没有可见响应，随后点击页面返回区域会表现为打开上传来源弹框；把上传弹框移出列表并改为受控状态后，返回误触已经消失，但“最近项目”内点击上传仍没有显示来源弹框。素材库使用相同列表上传结构，也存在最初的状态归属风险。
+-   **根因**：第一阶段的 `UploadSourcePopup` 由 App Vapor 可复用 `list-item` 内的 `UploadFile` 持有，视觉树、列表复用状态和 fixed 根层命中区域不一致。把上传器移出列表后虽然修复了弹框状态归属，但“最近项目”的上传按钮仍保留在 `CellList → list-item → 作用域插槽 → CreationUploadButton → AssetCellList emit` 链路中。后续关闭主弹框、等待 `closed` 再开来源弹框的处理仍依赖这条未被修复的点击链，还额外引入了弹框关闭和恢复状态，因此没有解决入口无响应。该阶段尚未进入权限、OSS 或素材创建请求。
+-   **正确处理**：保留已经生效的列表外 `UploadFile` 和受控 `sourceShow`；“最近项目”是本地数据且无需分页，改为 `CreationSourcePopup` 直接持有的纵向 `scroll-view` 三列网格，上传按钮直接调用同组件的 `openUpload()`，最近资源选择也不再经过原生列表作用域插槽。素材库和系统提示词等远程分页数据继续复用 `AssetCellList`。撤销无效的主弹框关闭、`closed` 等待和恢复状态机，恢复关联项目“选择器保持、来源弹框作为同级受控弹层”的交互。素材库现有单弹框入口以及权限、封面上传、OSS、素材创建和文件夹关联逻辑保持不变。
+-   **预防规则**：App Vapor 的可复用 `list-item` 内不得挂载 fixed 弹框或保存弹框显隐状态。把弹框移出列表后若入口仍无响应，必须继续核对按钮是否还位于原生列表作用域插槽和多级自定义事件链中，不能转而修改弹框动画。无需分页的本地最近数据优先使用普通纵向 `scroll-view` 网格，使上传入口和受控弹框由同一组件直接持有；远程分页数据才使用原生长列表。
+-   **验证结果**：已静态确认最近项目上传按钮和资源网格不再位于 `CellList/list-item`，按钮直接更新 `CreationSourcePopup` 持有的上传来源状态；创作页不再包含主弹框关闭/恢复状态机，列表外上传器、素材库入口、上传 loading、成功回调、素材入库及文件夹参数链路保持连通。按用户要求未执行构建编译，Android/iOS Vapor 的来源弹框显示、连续开关、系统选择器返回和上传失败重试仍需 HBuilderX 真机确认。
+-   **关联文件**：`components/UploadFile/index.uvue`、`components/UploadFile/types.uts`、`pages/creation/component/CreationUploadButton/`、`pages/creation/component/CreationSourcePopup/index.uvue`、`pages/library/component/AssetCellList/`、`pages/library/index.uvue`、`docs/uniapp-x-vapor-rules.md`、`docs/conclusion.md`；关联项目的根级 `MediaSourceSheet + FileUploader ref` 仅作行为参考，未修改。
+
+## 2026-09-10 — 上传来源弹框归属与创作素材选择器展示交互偏差
+
+-   **任务范围**：公共上传来源弹框、创作素材选择器头部及最近项目/素材库列表。
+-   **不满意表现**：上传来源弹框被新增为 `components/UploadSourcePopup/` 同级公共目录，没有按要求归入 `components/UploadFile/`；最近项目是本地完整列表，却仍显示“没有更多了”，选择弹框还额外展示标题。移除标题后又没有按关联项目补齐头部留白和独立关闭按钮，素材库列表无法滚动，点击资源也没有选择结果。
+-   **根因**：组件复用范围被扩大理解为全局独立组件，忽略了弹框只服务于 `UploadFile` 的职责边界；最近项目复用 `AssetCellList` 时只把列表标记为 `finished`，没有关闭 `CellList` 默认的结束状态文案。头部修正只删除了外层标题，没有重建关联项目的平衡头部；素材列表缺少明确的 Flex 剩余高度边界且仍开启无调用方承接的下拉刷新，`AssetCellList` 的 `select` 事件也未连接现有 `selectItem()`。
+-   **正确处理**：将弹框移动为 `components/UploadFile/uploadSourcePopup.uvue`，相关具名类型合并到 `UploadFile/types.uts`；为 `AssetCellList` 透传 `showLoadState`，仅最近项目关闭尾部加载状态。创作素材选择弹框使用左右等宽区域、居中 Tabs 和独立关闭按钮组成头部；列表放入 `min-height: 0`、`flex: 1` 的剩余区域，关闭选择器内无效的下拉刷新，并恢复资源选择事件。
+-   **预防规则**：抽取组件前先确认复用边界；仅服务单一公共组件的交互子组件应优先归入该组件目录。复用分页列表展示本地完整数据时，除设置 `finished` 外还要核对结束文案是否符合参考交互；参考选择器只有 Tabs 头部时不得再叠加通用标题，必须同时核对头部留白、对称占位和关闭入口。弹框内原生长列表必须有明确的 Flex 剩余高度，未提供刷新交互时关闭 refresher；修改事件透传时检查子组件公开事件到现有处理函数的完整链路。
+-   **验证结果**：已检查旧 `components/UploadSourcePopup/` 引用清除、最近项目 `showLoadState` 条件、头部结构、素材列表高度约束、刷新开关及 `select → selectItem` 事件链，并完成相关文件格式化、CSS 兼容和差异静态检查；按用户要求未构建，App 弹框头部、素材列表手势滚动和选择关闭仍待真机确认。
+-   **关联文件**：`components/UploadFile/index.uvue`、`components/UploadFile/uploadSourcePopup.uvue`、`components/UploadFile/types.uts`、`pages/library/component/AssetCellList/index.uvue`、`pages/library/component/AssetCellList/types.uts`、`pages/creation/component/CreationSourcePopup/index.uvue`。
+
+## 2026-09-07 — 动作视频误走图片缩略图、封面丢失与普通输入字段串写
+
+-   **任务范围**：创作模板动作素材、创作输入回填、模板列表与首页媒体展示。
+-   **不满意表现**：动作系统提示词虽然实际资源是视频，但因输入 `dataType` 为 `Radio` 被当成图片并请求缩略图接口；修正媒体类型后，选择动作视频仍因系统提示词没有保存独立 `coverUrl` 而无法展示封面；普通模特图选择同时写入 `value`、`url` 和 `coverUrl`，与后端流水线输入契约不一致。
+-   **根因**：媒体类型只信任模板或输入声明，没有使用实际资源 URL 后缀覆盖声明；公共 OSS 地址解析也没有在缩略图请求边界复核资源类型。输入选择逻辑一方面把系统提示词的字段回填规则错误复用于普通素材，另一方面误把 `coverUrl` 排除在系统提示词的展示状态之外；`displayValue` 实际是说明或名称，不能替代封面地址。
+-   **正确处理**：统一按资源扩展名推断图片或视频，声明类型只用于无扩展名兜底；动作提示词、模板列表和首页共用该判断。OSS 地址解析在最底层只允许已识别图片进入缩略图接口，视频源走原文件签名，视频封面仍作为图片请求缩略图。输入回填按后台定义分为视频、系统提示词、图片和其他参数四类：视频写入 `value/coverUrl`，系统提示词写入 `value/url/displayValue/coverUrl`，图片与图片列表只更新 `value`，其他参数（例如选项）也只更新 `value`。
+-   **预防规则**：动态媒体的展示类型使用“资源后缀优先、声明类型兜底”，但工作流参数契约必须按后台输入定义分类，不能用所选资源类型反推；任何缩略图请求都要在 OSS 解析边界确认图片类型。修改流水线输入时区分视频、系统提示词、图片和其他参数，禁止为普通输入补写 `url`、`displayValue` 或用其绕过必填校验；`displayValue` 只保存可读文本，视频封面使用独立 `coverUrl`。
+-   **验证结果**：已静态检查动作 `.mp4` 被识别为视频、图片封面仍识别为图片，系统提示词与普通视频选择都会保留独立封面；普通图片和图片列表不写入 `url`、`coverUrl` 或 `displayValue`，并检查创作页、模板页与首页均使用统一媒体判断。按用户要求未执行构建编译，真实缩略图请求、动作视频封面及启动参数仍待 HBuilderX Android/iOS 真机联调。
+-   **关联文件**：`utils/media.uts`、`composables/useOssUpload.uts`、`components/MediaViewer/index.uvue`、`composables/useCreation.uts`、`pages/creation/component/CreationInputStrip/index.uvue`、`pages/creation/component/CreationSourcePopup/index.uvue`、`pages/main/index.uvue`、`pages/useTemp/index.uvue`、`pages/useTemp/component/TemplateHorizontalList/index.uvue`、`docs/uniapp-x-vapor-rules.md`。
+
+## 2026-09-07 — 首页 Tabs 横向滚动定位异常
+
+-   **任务范围**：首页 App 端分类栏的横向滚动和活动分类定位。
+-   **不满意表现**：点击分类后，Tabs 横向滚动会跳动或停在错误位置；此前误将“滚动异常”理解为瀑布流纵向位置并加入回顶逻辑，未命中实际问题。
+-   **根因**：原 `rice-tabs` 点击路径会主动执行一次异步定位，随后 `modelValue` 监听再次执行相同定位；分类列表异步更新时还会触发尺寸重算。App 端多个异步 `getBoundingClientRectAsync` 和 `scrollLeft` 写入可能以不同顺序完成，使较早计算覆盖最新活动项的位置。
+-   **正确处理**：撤销误加的瀑布流 `scrollTop` 回顶逻辑，并完整撤销 `uni_modules/rice-ui` 中上一轮新增的 `layoutVersion`、`measureVersion` 和测量监听。首页分类栏改为页面自有横向 `scroll-view`，以稳定的活动项 id 绑定 `scroll-into-view`，每次只由当前 `activeFilterKey` 决定唯一目标，不再进入 Rice Tabs 的重复异步定位链；筛选按钮仍固定在横向列表右侧。
+-   **预防规则**：用户描述“滚动异常”时必须先确认横向控件定位还是内容列表纵向位置；App 端活动项定位只保留一个状态源和一个滚动入口，避免点击处理、模型监听和尺寸重算同时写滚动位置。页面可独立实现且问题未被确认是组件库漏洞时，不修改 `uni_modules`。
+-   **验证结果**：已确认 `uni_modules/rice-ui` 相对 Git 基线无修改；已静态检查首页不再引用 `rice-tabs`、`TabsChange`、`TabsOptions`、列表 `scrollTop`、`layoutVersion`、`measureVersion` 或 `waterflowVersion`，横向 `scroll-view` 的直接内容容器显式使用横向 Flex。按用户要求未构建编译，活动项定位、手势横向滚动和快速连续点击仍待 HBuilderX Android 真机确认。
+-   **关联文件**：`pages/main/index.uvue`、`docs/conclusion.md`、`docs/uniapp-x-vapor-rules.md`。
+
+## 2026-09-07 — 首页分类筛选整批换数触发 Vapor 渲染崩溃
+
+-   **任务范围**：首页分类、模板类型筛选后的列表数据提交，以及 Android Vapor keyed `v-for` 更新路径。
+-   **不满意表现**：下拉刷新已经恢复，但点击分类或筛选并收到新数据时真机崩溃；上一轮在媒体和瀑布流生命周期中加入推测性防护后，崩溃没有解决且列表数据不再显示。
+-   **根因**：提供的 Minidump 显示崩溃为 `SIGSEGV / SEGV_MAPERR`、访问地址 `0x0`，且崩溃线程 ID 与进程 ID 相同。dmp 中 `libuniappx.so` 的 Build ID `d2f81b915bbbefb53180e0084903ae650a3c89c4` 与本机 HBuilderX Vapor 运行库完全一致；崩溃帧位于未导出的渲染内部函数，反汇编显示指令 `ldr x8, [x25]` 执行时 `x25 = 0`，其后调用者依次为 `RenderEffect`、`ReactiveEffect::run`、`FlushJobs`。结合下拉刷新复用相同 ID 正常、分类和筛选整批更换 ID 必现的触发差异，可确定崩溃发生在 keyed `v-for` 整批换 key 的 Vapor 渲染刷新阶段；具体未导出函数名无法从当前符号表严谨恢复。此前把问题归因于视频和异步测量没有日志依据。
+-   **正确处理**：撤回上一轮对 `MediaViewer`、视频选择状态和 Rice UI 测量生命周期的推测性修改。首页提交 reset 结果前比较旧、新列表 ID：ID 顺序一致时直接更新；存在非空的整批 key 变化时，先提交空列表并等待一次 `nextTick`，确认请求仍为最新后再提交新列表，将旧节点卸载与新节点创建拆成两个 Vapor 刷新批次。实际修复只落在页面层，没有继续修改 `uni_modules`。
+-   **预防规则**：原生崩溃必须先解析 dmp 的异常流、崩溃线程、模块 Build ID、指令和可用符号，再修改对应调用链；不能根据触发动作猜测媒体或组件生命周期。Android Vapor keyed `v-for` 整批换 key，且日志确认空指针发生在主线程的 `RenderEffect` 刷新链时，应在业务数据提交边界拆分卸载与挂载批次，并在异步间隔后复查请求版本。除非日志、调用链或最小复现确认组件库自身漏洞，否则禁止修改 `uni_modules`。
+-   **验证结果**：已使用 `minidump-stackwalk 0.26.1` 解析 dmp，确认 Android arm64、`SIGSEGV`、空地址和崩溃线程；已用匹配 Build ID 的本机 `libuniappx.so` 动态符号表还原前四帧。已静态检查两阶段换数条件、请求版本复查和相关 diff；按用户要求未构建编译，分类、筛选、快速连续切换及空结果仍待 HBuilderX Android 真机验证。
+-   **关联文件**：`AGENTS.md`、`pages/main/index.uvue`、`docs/conclusion.md`、`docs/uniapp-x-vapor-rules.md`；诊断输入为 `unpackage/logs/android/20260907_113957_337_io.dcloud.uniappx_crash.dmp`，未修改生成日志。
+
+## 2026-09-07 — 首页刷新时视频上下文销毁异常
+
+-   **任务范围**：首页瀑布流刷新与公共 `MediaViewer` 的视频播放、失活和卸载时序。
+-   **不满意表现**：第一次修复仅对 `uni.createVideoContext(videoId)` 的返回值判空并把清理前移到 `beforeUnmount`，随后 Android Vapor 报 `UniImageElementImpl cannot be cast to UniVideoElement`，且 `beforeUnmount` 钩子出现未处理异常。
+-   **根因**：`MediaViewer` 用 `v-if` 在活动视频与封面图片之间切换；视频失活或组件销毁时，指定 id 对应的 `<video>` 已不存在，Android 原生实现会在返回上下文前把当前条件分支元素强转为视频元素，因此返回后判空无法保护该调用。第一次修改没有验证 API 调用的前置条件，只处理了表面的空值错误。
+-   **正确处理**：仅在活动视频分支已渲染且下一帧状态仍有效时获取上下文并播放；失活、加载失败和卸载不再重新按 id 获取视频上下文，由 `v-if` 移除内置视频节点并交给运行时释放，同时保留异步地址请求失效控制。
+-   **预防规则**：修复原生上下文异常前必须同时核对调用时机、目标节点类型、条件渲染状态和原生 API 是否会在返回前强转；不能把可空返回值检查当作通用保护。对 `createVideoContext` 的每个调用都要证明 `<video>` 当时实际存在，并检查异步回调执行前状态是否已变化。
+-   **验证结果**：已静态确认组件失活、加载失败和卸载路径不再调用 `createVideoContext`，播放路径在 `nextTick` 后重新校验活动状态；按用户要求未执行构建编译，Android/iOS Vapor 的刷新、快速滚动和前后台切换仍待 HBuilderX 真机确认。
+-   **关联文件**：`components/MediaViewer/index.uvue`、`composables/useVideoPlayback.uts`、`pages/main/index.uvue`、`docs/uniapp-x-vapor-rules.md`。
+
+## 2026-09-04 — 登录模块视觉偏离参考基准
+
+-   **任务范围**：`pages/login/` 登录、密码登录、注册、找回密码及滑块认证展示。
+-   **不满意表现**：登录与密码登录页被增加了参考页面不存在的标题和说明，品牌、表单、登录方式入口的纵向位置被重新编排，字号与图标也出现可感知差异。
+-   **根因**：把“优化架构和交互”错误扩大为可自行改版 UI，没有先固定参考页面的视觉锚点再做 uni-app x 兼容替换。
+-   **正确处理**：恢复参考页面的结构层级、间距、字号、颜色、资源和控件尺寸，仅使用 Rice UI、UTS、Vapor 兼容 CSS 重建相同展示结果，不复制传统 uni-app 源码。
+-   **预防规则**：用户指定关联项目为视觉基准时，先逐项记录结构、尺寸、间距、字体、颜色、资源和交互位置；未经明确要求不得增加文案、卡片或重新定义视觉层级。
+-   **验证结果**：已完成源码结构和样式参数对照、静态 CSS/模板检查；按用户要求未执行构建测试，Android/iOS 实际渲染仍待 HBuilderX 真机确认。
+-   **关联文件**：`AGENTS.md`、`pages/login/auth.css`、`pages/login/index.uvue`、`pages/login/password.uvue`、`pages/login/register.uvue`、`pages/login/forgot.uvue`、`components/SliderCaptcha/index.uvue`。
+
+## 2026-09-04 — 登录基础逻辑重复、错误捕获冗余且 Socket Store 职责过重
+
+-   **任务范围**：请求层、登录验证码倒计时、认证工具、Socket 状态管理、错误处理和 `.uvue` 格式化。
+-   **不满意表现**：请求成功响应被错误拆层；三个页面重复维护倒计时；页面目录混放工具函数；Socket Store 同时承担协议解码、连接重试和业务状态，并使用冗长分支转换事件名；无业务动作的 `catch` 仅吞错或打印日志，模板属性和标签闭合符也被机械拆行。
+-   **根因**：没有核对 `kux-request` 1.1.2 的原始响应拦截行为，迁移时也未按响应式逻辑、纯工具、传输协议和业务状态划分职责；错误处理和 Vue 格式化沿用了工具默认行为，没有落实项目的简洁逻辑与模板排版习惯。
+-   **正确处理**：通过请求/原始响应拦截器统一注入鉴权并保留完整响应；倒计时归入公共 composable；认证工具归入 `utils`；SignalR 传输移入 `utils/signalr.uts`，Store 以对象映射和 `Map` 分发业务事件；删除无业务动作的错误捕获，只保留状态恢复、验证码重置和流程回退等分支，并配置 `.uvue` 属性与闭合标签排版。
+-   **预防规则**：简单一次性逻辑直接使用；稳定重复或带生命周期的逻辑才封装。静态值转换使用对象映射，复杂处理器映射使用 `Map`；Store 不承载可独立复用的协议实现。仅日志不构成捕获错误的理由；修改 `.uvue` 后必须按仓库配置格式化并抽查多属性标签。
+-   **验证结果**：已静态核对 `kux-request` 返回路径、导入路径、事件映射和 UTS 具名类型；按用户要求未执行构建和接口联调，真实响应与 Socket 重连仍待 HBuilderX/后端环境确认。
+-   **关联文件**：`.prettierrc`、`AGENTS.md`、`utils/request.uts`、`utils/auth.uts`、`utils/signalr.uts`、`stores/socket.uts`、`stores/user.uts`、`composables/useVerificationCountdown.uts`、`pages/login/`。
+
+## 2026-09-05 — 首页瀑布流、刷新状态与固定导航层级异常
+
+-   **任务范围**：首页 `rice-waterflow` 长列表、双列瀑布流、下拉刷新、分类筛选栏、筛选弹层和底部导航安全区域。
+-   **不满意表现**：双列曾按两项一行取最大高度，后续又在 `CellList` 中手工计算绝对定位，没有按指定的 `rice-waterflow` 实现；分类 Tab 切换复用了下拉刷新函数，导致切换筛选时出现 refresher 动画；为解决同数量数据替换后的旧高度缓存而强制重建整个 waterflow 后，下拉刷新和 Tabs 切换又会出现数据已返回但列表空白，重新进入页面才恢复；首页还曾通过 JSON 往返克隆响应，并为未确认的封面、类型字段编写多重兜底。
+-   **根因**：没有先区分“瀑布流滚动容器”和“普通列表封装”的职责；程序化重载与用户手势刷新共用 `refresh()`，使 `refreshing` 同时承担数据重载和 `refresher-triggered` 两种含义；通过页面 `key` 销毁整个滚动容器会使运行期子项注册和异步测量失配，任一高度持续为 0 时所有卡片都会保持透明；旧页面又把 UTS 类型转换与业务数据克隆混在一起，没有先以 `api-map.md` 和实际响应收敛契约。
+-   **正确处理**：首页直接使用 `rice-waterflow` 和 `rice-waterflow-item` 完成测量与双列排布；保持 waterflow 容器实例稳定，ID 整批变化时在页面提交边界分两个刷新批次卸载旧子项、挂载新子项，让原组件按子项数量变化清理高度并重新测量，不再扩展 Rice UI 私有协议；首页直接使用已确认的 `TemplateVO`，去掉 JSON 克隆、重复的首页模板模型和未确认字段兜底；Navbar 与 Tabs 放在 waterflow 外部，只有手势事件设置 `refreshing`；筛选、搜索和会员权益弹层拆入 `pages/main/component/`，页面仅保留组装与查询状态。
+-   **预防规则**：用户指定具体 Rice UI 布局组件时，先核对其子项注册、测量缓存和数据替换触发条件；程序化 reload 与手势 refresh 必须使用不同入口；替换数据集时不能用页面 `key` 重建包含异步测量和子项注册状态的滚动容器，应先判断能否在页面数据提交边界触发组件已有的卸载、挂载和重测流程；必须先根据 `docs/api-map.md`、实际响应和当前业务用途确定 API 字段，禁止为未确认别名写兜底链或仅为类型转换克隆响应。
+-   **验证结果**：已静态确认下拉刷新和 Tabs 切换不再销毁 waterflow，ID 整批变化时的两个刷新批次会触发原组件已有的子项数量监听及挂载测量；已执行相关引用、条件渲染和 `git diff --check` 检查。按用户要求未执行构建，刷新与分类切换后的动态测量、滚动位置和媒体可见性仍待 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`AGENTS.md`、`api/template/types.uts`、`utils/response.uts`、`components/PullDown/index.uvue`、`composables/useVideoPlayback.uts`、`pages/main/index.uvue`、`pages/main/useTemp.uvue`、`pages/main/component/`；参考项目 `src/components/RefreshIndicator/index.vue`、`src/components/Home/TemplateFilterSheet.vue`、`src/pages/main/index.vue`。
+
+## 2026-09-07 — 创作流水线配置为空与 App 高度样式不兼容
+
+-   **任务范围**：创作首页进入五类功能流水线时的配置查找，以及 `CreationWorkflowView` 的 App 端 CSS。
+-   **不满意表现**：点击功能后读取 `pipelineName` 报 `Cannot read properties of undefined`；App 编译器同时拒绝 `min-height: 100%`。
+-   **根因**：流水线模式配置把普通对象断言为字符串索引字典，运行期动态索引未得到配置，且默认项仍通过同一路径动态读取；页面内容容器沿用了 App uvue CSS 不支持的百分比 `min-height`。
+-   **正确处理**：把五类配置改为具名常量并注册到 `Map<string, CreationModeConfig>`，查找失败时直接返回具名的一键换装配置；移除无必要的百分比最小高度，让滚动内容按自身高度和外层 Flex 布局排布。
+-   **预防规则**：UTS bytecode 的运行期字符串配置查找使用 `Map` 或显式分支，兜底值不得再次依赖动态索引；App 端 `min-height` 不使用百分比，改用受支持的固定单位或 Flex 自适应。
+-   **验证结果**：已静态确认五类模式均注册、默认配置不依赖动态索引，创作相关 `.uvue` 不再包含百分比 `min-height`，并通过 `git diff --check`。按用户要求未执行构建编译，实际点击与 Android/iOS 渲染仍待 HBuilderX 真机确认。
+-   **关联文件**：`AGENTS.md`、`docs/uniapp-x-vapor-rules.md`、`composables/useCreationPipelines.uts`、`pages/creation/component/CreationWorkflowView/index.uvue`。
+
+## 2026-09-07 — 创作输入被横向压平且流水线映射脱离实际返回
+
+-   **任务范围**：一键换装、智能去除、图片生成和图生视频的流水线选择、动态输入排版、标题文案、图标与启动校验。
+-   **不满意表现**：所有后台输入被压在同一条横向列表中，页面标题和按钮主要来自前端固定配置，智能去除没有使用大上传区；图片生成还按实际响应不存在的 `AiSceneChange` 查找，因此点击后提示不可用；后续又按英文名称字面含义交换了一键换装与图生视频的流水线。
+-   **根因**：实现时只复用了卡片条，没有保留关联项目“输入纵向分组、组内素材横向滚动”的结构；流水线名称和媒体类型按前端猜测固定，未用用户提供的真实响应核对 `name`、`workflow.name`、`inputData`、`dataSourceType` 与可空字段，也没有以用户确认的业务映射覆盖容易误导的英文枚举名。
+-   **正确处理**：每个可见媒体或系统提示词输入生成独立纵向区块，区块标题直接使用后台 `input.name`，再按 key/name 语义选择模特、动作、场景、服装或视频图标；智能去除首项使用整行大上传框并只保留现有单条说明；页面标题优先使用后台 `workflow.name`，分组校验优先使用 `requiredGroupMessage`；按已确认契约将一键换装绑定 `VideoGenerate`、图片生成绑定 `AiClothingChange`、图生视频绑定 `VideoClothingChange`，不再按英文名称自行推断。
+-   **预防规则**：接入固定流水线前必须记录并确认“业务入口 → pipeline name → workflow title → input key/name/dataType/dataSourceType”；枚举英文名称只能辅助定位，不能替代已确认的业务契约；动态表单按后台输入维持独立语义分组，不能为了复用组件把不同输入压平成一个展示区。
+-   **验证结果**：已按用户确认契约静态核对一键换装、图片生成、图生视频和智能去除的精确流水线映射及输入图标分类，检查动态表单只渲染媒体与系统提示词输入、设置项仍进入参数弹层，且 `git diff --check` 通过。按用户要求未执行构建编译，纵向滚动、大上传框、素材选择与真实启动仍待 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`api/template/types.uts`、`api/workflow/types.uts`、`composables/useCreation.uts`、`composables/useCreationPipelines.uts`、`pages/creation/component/CreationInputStrip/`、`pages/creation/component/CreationWorkflowView/`。
+
+## 2026-09-07 — 创作素材背景裁剪、点击跳转与视频封面 loading 冲突
+
+-   **任务范围**：创作上传卡片背景、模板资源点击交互和公共 `MediaViewer` 视频封面加载状态。
+-   **不满意表现**：竖形、横形上传卡共用错误的背景适配方式，图片边框被 `aspectFill` 裁掉；模板资源点击会进入预览页，视频无法在卡片内直接播放/暂停；视频封面已经显示时 loading 仍覆盖在上方。
+-   **根因**：上传卡没有按容器方向选择对应比例的现有背景资源；素材卡在 `MediaViewer` 外层统一发出预览事件，没有利用播放器的活动和点击参数区分图片与视频；视频 loading 只等待媒体 ready/play 事件，没有把“封面已可展示”和“非自动播放等待用户操作”视为可交互状态。
+-   **正确处理**：竖卡使用 `upload-backdrop.png`、横向大卡使用 `upload-horizontal-backdrop.png`，并用 `scaleToFill` 完整覆盖目标尺寸；为 `MediaViewer` 增加 `emitClick` 参数，创作流水线关闭点击事件发出，图片点击不跳转，视频通过 `active + tapToPlay` 在组件内部播放/暂停；视频封面解析成功或视频明确不自动播放后立即关闭 loading，活动状态切换时也不再把 loading 叠到有效封面上。
+-   **预防规则**：装饰背景图必须先核对源图宽高比并明确 `aspectFill` 是否允许裁剪；媒体卡点击行为由 `MediaViewer` 显式参数组合决定，禁止外层容器无差别接管图片和视频；视频 loading 状态需分别覆盖地址解析、封面可见、等待手动播放和实际播放四种状态。
+-   **验证结果**：已核对竖形背景为 252×330、横形背景为 1029×474，静态确认两种卡片使用对应资源和 `scaleToFill`；已检查创作页关闭预览事件、视频启用就地播放参数，以及封面/非自动播放分支会关闭 loading；`git diff --check` 通过。按用户要求未执行构建编译，视频点击、封面缓存命中和 App 端 play/pause 事件仍待 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`components/MediaViewer/index.uvue`、`components/MediaViewer/types.uts`、`pages/creation/component/CreationInputStrip/index.uvue`、`pages/creation/component/CreationInputStrip/types.uts`、`pages/creation/component/CreationWorkflowView/index.uvue`。
+
+## 2026-09-08 — 条件命名插槽触发 Vapor 模板降级失败
+
+-   **任务范围**：素材库页面管理模式下的 Navbar 右侧关闭入口，以及“添加至”弹框组件拆分。
+-   **不满意表现**：编译时报 `[plugin:uni:sd] Template render code lower failed: dynamic slot source entry must be an arrow function`，素材库页面无法继续生成模板渲染代码。
+-   **根因**：`#right` 命名插槽和 `v-if` 同时声明在同一个 `<template>` 上，使该插槽在 Vapor bytecode 降级阶段被识别为动态插槽源，但生成条目不符合编译器要求的箭头函数形态；全项目扫描只有该处使用了这种组合。
+-   **正确处理**：保持 `<template #right>` 为静态命名插槽，将管理模式条件下移到插槽内部真实 `<view>`；“添加至”内容提取为页面私有 `AssetDestinationPopup`，继续复用公共 `Popup` 并通过具名 props/emits 通信。
+-   **预防规则**：Vapor bytecode 页面不得在同一个 `<template>` 上组合 `v-if`/`v-for` 与 `#slot`/`v-slot`；命名插槽外壳保持静态，条件或循环放到插槽内部真实节点。修改插槽后定点扫描条件指令与插槽指令的同节点组合。
+-   **验证结果**：已定点确认素材库页面及新弹框组件不存在条件命名插槽组合，两个 `.uvue` 脚本和组件类型文件通过 TypeScript 语法解析，组件导入与事件绑定一致。按用户要求未执行 HBuilderX 构建，实际 `uni:sd` 降级结果仍待下次正常运行时确认。
+-   **关联文件**：`pages/library/index.uvue`、`pages/library/component/AssetDestinationPopup/index.uvue`、`pages/library/component/AssetDestinationPopup/types.uts`、`docs/conclusion.md`。
+
+## 2026-09-08 — 筛选项类型在 setup 运行时未定义
+
+-   **任务范围**：素材库筛选弹框的收藏、资源类型选项初始化与确认回传。
+-   **不满意表现**：打开素材库页面时 Vue 报 setup 函数执行异常，随后抛出 `ReferenceError: AssetFavoriteOption is not defined`，筛选弹框无法正常创建。
+-   **根因**：筛选项对象字面量使用了从 `import type` 引入的 `AssetFavoriteOption`、`AssetTypeOption` 进行 `as` 断言，其中选项类型又由泛型对象类型派生；当前 UTS/Vapor 运行产物没有把这组断言稳定擦除或展开，setup 初始化数组时访问了不存在的运行时类型名。确认回传也存在相同形式的冗余业务类型断言。
+-   **正确处理**：保留数组和局部变量上的具名静态类型标注，移除对象字面量及确认参数上的 `as` 断言；将两个模板列表项类型改为直接具名对象类型，不再经通用泛型别名派生。
+-   **预防规则**：`.uvue` setup 中初始化会被模板遍历的业务对象数组时，优先使用 `const items: XxxItem[] = [...]` 约束字面量，禁止再对每项重复 `as XxxItem`；从 `import type` 引入且供模板使用的简单对象模型保持为直接具名类型，避免仅为复用两个字段引入泛型别名。
+-   **验证结果**：已定点确认 `AssetFilterPopup` 不再包含相关 `as` 断言或 `AssetFilterOption<T>` 泛型别名，组件脚本和类型文件均通过 TypeScript 语法解析，且无行尾空白。按用户要求未执行 HBuilderX 构建，Android/iOS Vapor 下弹框打开、重置与确认交互仍待真机确认。
+-   **关联文件**：`pages/library/component/AssetFilterPopup/index.uvue`、`pages/library/component/AssetFilterPopup/types.uts`、`docs/conclusion.md`。
+
+## 2026-09-08 — 素材库管理、文件夹与创作记录操作未按参考交互落地
+
+-   **任务范围**：素材库管理选择与批量工具栏、文件夹操作菜单、创作记录操作、素材上传入口，以及公共 `Popup`、`MediaViewer` 的键盘和媒体状态。
+-   **不满意表现**：管理态仍使用自绘勾选且视频播放标识显示不符合状态；批量操作没有用 Rice Popup 独立承载；文件夹更多按钮点击后没有可见反馈，改为滚动行内菜单并拦截外层关闭请求后 Web 正常，但 App 仍会关闭文件夹弹框且不显示菜单；“添加至”弹框被常驻批量栏遮挡；素材骨架存在公共列表和业务列表两层内边距，行高也与真实卡片不一致，资源圆角和选中边框不统一；创作记录骨架同样存在双层内边距且裁剪圆角不一致；首页瀑布流横向、纵向间距使用不同值；创作记录缺少下载、发布、删除及禁用判断；素材上传直接进入系统选择；文件夹编辑弹框与键盘先后出现；图片已经显示时仍可能保留 loading。
+-   **根因**：上一轮只完成了页面主体和基础弹框拆分，没有逐项对照关联项目的动作入口、可用条件和弹层位置；文件夹操作菜单最初挂在 App 原生 `scroll-view` 的滚动行内部，后续改成滚动容器外的自定义浮层仍需自行维护层叠、定位和关闭时序，改用全屏 Action Sheet 虽隔离了原生触摸层，却丢失了关联项目要求的行旁菜单形态；“添加至”和批量工具栏都锚定屏幕底部，第一次修正又错误地只降低工具栏层级，没有满足两个面板同时可见的要求；素材及创作记录自定义骨架没有关闭 `CellList` 默认骨架内边距，资源行的 310/306/302rpx 尺寸链被破坏，创作记录骨架也没有在动画节点和内容节点同时裁剪圆角；首页主轴和交叉轴间距分别使用 32rpx 与 18rpx。公共媒体加载状态还会被非视频封面监听重复重置，键盘避让与“等待键盘后显示内容”也被绑定为同一行为。
+-   **正确处理**：管理勾选改用 `rice-checkbox`，视频播放标识改为组件显式控制；批量工具栏提取为无蒙层的底部 `rice-popup`，使用指定删除和添加至图标；“添加至”保持业务弹框与管理工具栏原层级不变，通过工具栏高度和底部安全区计算业务弹框的底部偏移，使它紧邻管理栏上方展示；文件夹更多操作使用官方 `page-container` 跟随元素对齐方案，测量当前按钮后在其右下方展示关联项目同款深色菜单，空间不足时翻到上方，菜单离场后再触发重命名或删除；`CellList` 为自定义骨架提供关闭默认内边距的参数，素材骨架与真实资源统一行高、单元尺寸和圆角，创作记录骨架按参考高度、数量和 8rpx 圆角独立裁剪；首页瀑布流主轴、交叉轴统一使用 18rpx 间距。创作记录提取操作弹框并按 URL、`canPublicPublish`、`Pending` 状态控制下载、发布和删除；混合素材上传先打开来源弹框；`Popup` 将键盘避让与等待显示拆成独立参数，文件夹输入在弹框开始打开时聚焦；`MediaViewer` 关闭系统播放按钮并复用指定播放图标，同时避免非视频封面变化重复触发加载。
+-   **预防规则**：迁移关联项目交互时，先建立“入口、弹层、动作、禁用条件、关闭时机”逐项映射；App 行旁菜单不能放在原生滚动内容中，也不能用形态不同的全屏 Action Sheet 替代，优先采用官方 `page-container` 跟随元素定位并在离场后衔接后续弹框；多个底部面板要求同时可见时，先确定各自占位和锚点，使用明确底部偏移纵向排列，禁止只靠修改 `z-index` 解决遮挡；自定义骨架必须明确由公共列表还是业务组件负责间距，并在实际显示动画的节点和外层裁剪节点上使用一致圆角；瀑布流横纵间距要求一致时只保留一个间距源。管理工具栏和动作面板使用项目现有弹层能力承载，不用页面固定节点或系统 ActionSheet 替代指定交互；媒体 loading 必须区分资源首次解析、已加载资源复用与视频封面状态；键盘避让和弹层展示时序不得共用一个隐含开关。
+-   **验证结果**：按用户要求未执行构建，也在用户补充指令后停止后续样式与 UTS 检测；Android/iOS Vapor 下的弹层位置、键盘动画、图片缓存命中、视频图标、系统媒体选择以及下载/发布/删除接口结果仍待 HBuilderX 真机确认。
+-   **关联文件**：`components/Popup/`、`components/MediaViewer/index.uvue`、`components/UploadFile/`、`components/CellList/`、`pages/library/index.uvue`、`pages/library/types.uts`、`pages/library/composables/useLibraryWorkspace.uts`、`pages/library/component/AssetCellList/`、`pages/library/component/AssetBatchToolbar/`、`pages/library/component/AssetFolderPopup/`、`pages/library/component/AssetFolderEditorPopup/`、`pages/library/component/CreationRecordList/`、`pages/library/component/RecordActionPopup/`、`pages/main/index.uvue`、`static/icons/svg/delete.svg`。
+
+## 2026-09-08 — 首页与素材库首次加载反馈时序异常
+
+-   **任务范围**：首页瀑布流首次加载尾部状态，以及素材库“我的作品”“素材库”页签首次加载骨架。
+-   **不满意表现**：首页骨架结束后会先显示“继续上拉加载”再显示模板数据；素材库首次进入“我的作品”或首次切换到“素材库”时没有显示骨架。
+-   **根因**：首页加载尾部在非刷新状态下始终渲染，`loading` 和 `finished` 都为 false 时仍展示空闲提示。素材页的请求状态在 `onLoad` 才置为 loading，首帧会先按空态渲染；“素材库”还会预先把上传入口加入行数据，使 `CellList` 因 `itemKeys` 非空而抑制骨架。
+-   **正确处理**：首页尾部只在正在加载或已经结束时展示，不再提供空闲“继续上拉加载”状态；素材页根据当前活动页签的 `loaded`、`error` 和真实请求状态补齐首帧 loading；素材首次请求且尚无业务数据时暂不把上传入口行传给 `CellList`，请求完成后再恢复上传入口和数据行。
+-   **预防规则**：首次加载骨架不能只依赖生命周期内稍后写入的请求状态，页面首帧就必须能表达“当前页签尚未加载”；包含上传、新建等固定入口的列表不能直接用全部渲染行判断是否有业务数据，骨架判定应以真实业务项为准。列表尾部只渲染 loading、finished 等明确状态，不在空闲状态插入会阻挡首屏内容的提示。
+-   **验证结果**：已静态确认首页空闲尾部不再渲染，“我的作品”和活动中的“素材库”在未加载且无错误时进入骨架态，素材上传入口不会阻止首次骨架。按用户要求未执行构建，Android/iOS Vapor 下首次进入、首次切换和请求失败重试仍待真机确认。
+-   **关联文件**：`pages/main/index.uvue`、`pages/library/index.uvue`、`pages/library/component/AssetCellList/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-09 — 素材库切换页签后刷新手势残留与 App 文件夹菜单失效
+
+-   **任务范围**：素材库三个页签的下拉刷新挂载方式，以及文件夹更多菜单的 App 端结构。
+-   **不满意表现**：首次进入时下拉刷新正常，切换页签后刷新反馈不再显示，向下拖动的距离也不能回弹；文件夹更多菜单在 Web 正常，App 点击后却直接关闭文件夹弹框。
+-   **根因**：三个包含原生 `list-view` 的页签使用 `v-show` 同时常驻，只把非活动面板隐藏；App 在页签尺寸和可见性切换后仍保留隐藏列表的原生 refresher 手势状态，重新显示时无法可靠复位。文件夹操作则不应继续依赖当前 Popup 与原生滚动容器共享渲染层的普通绝对定位菜单；后续使用 Rice Action Sheet 虽解决了 App 触摸冲突，但没有保持关联项目的行旁菜单布局。
+-   **正确处理**：三个页签改为互斥 `v-if / v-else-if / v-else`，任何时刻只挂载当前页签的一个原生列表，数据和分页状态继续由页面 composable 保存；保留 `CellList` 原有 refresher 节点，不再修改其节点类型。文件夹更多按钮改为官方 `page-container` 跟随元素对齐弹层，操作菜单与滚动行分层，通过按钮边界和窗口空间计算上下位置，选择动作在菜单离场后回传现有重命名和删除事件。
+-   **预防规则**：App 页面切换多个带 refresher 的原生列表时，不用 `v-show` 长期保留隐藏实例；先确认是否需要保留滚动位置，再选择互斥挂载或显式维护每个列表的原生状态。原生滚动行旁需要菜单时，使用 `page-container` 独立承载并按目标元素测量定位，不把菜单节点直接放入滚动容器，也不用全屏 Action Sheet 改变既定交互形态。
+-   **验证结果**：已定点复核 `page-container` 入口、目标按钮测量、上下空间判断、滚动关闭及离场后事件回传；按用户要求未执行构建、样式检测或 UTS 检测。Android/iOS Vapor 的跟随位置、透明遮罩命中、关闭后衔接重命名/删除，以及收藏图标更新仍需 HBuilderX App 真机确认。
+-   **关联文件**：`pages/library/index.uvue`、`pages/library/component/AssetFolderPopup/index.uvue`、`pages/library/component/AssetBatchToolbar/index.uvue`、`pages/library/component/AssetCellList/index.uvue`、`static/icons/svg/favorite.svg`、`docs/conclusion.md`。
+
+## 2026-09-09 — 我的页面视觉基准、单滚动吸顶与首次骨架偏离
+
+-   **任务范围**：我的页面资料区、会员卡、已发布/收藏双列内容、吸顶、首次骨架和发布作品入口。
+-   **不满意表现**：页面头部结构、间距和会员卡与关联项目差异明显；装饰图照搬为 App 不支持的 URL 型 `background-image`；已发布和收藏各自持有滚动容器并通过滚动事件折叠整个头部，既不是参考项目的整页滚动，也没有形成正确吸顶；首次骨架作为瀑布流业务项插入，发布入口仍同时显示；点击发布入口直接进入发布页，没有先打开选择作品弹框。
+-   **根因**：修改前没有先核对 uni-app x App + Vapor 的 CSS 与吸顶组件兼容性，也没有复用已有 `CellList` 的 `list-view + sticky-header` 能力；把参考项目的 CSS 背景和 u-sticky 表面写法直接迁入当前工程；骨架只看当前列表组件的便利写法，没有落实首页已确认的“首帧独立骨架、隐藏业务内容”模式；发布入口只迁移了路由结果，没有追踪参考项目的选择作品流程。
+-   **正确处理**：使用真实 `<image>` 节点承载 `user-shadow.png` 和会员卡装饰图；资料区、会员卡、积分区按参考资源与尺寸重新排版；扩展 `CellList` 的可配置吸顶高度，并明确 `sticky-head` 只渲染吸顶头、默认插槽只渲染内容，整个我的页面由一个 `list-view` 负责滚动和触底；已发布与收藏改为内容型双列分栏，按已知媒体高度分配到较短列，不再创建子滚动容器；首次请求复用首页独立双列骨架结构，骨架期间不渲染发布入口或业务卡片；发布入口复用现有 `PublishWorkPickerPopup` 与 `usePublishWork`，选中记录后再携带数据进入发布页。
+-   **预防规则**：每次新增或修改 CSS 前先查 DCloud 当前官方兼容表，不能以 Web 或传统 uni-app 可用作为 App 依据；App 装饰位图禁止使用 `background-image: url(...)`，改用真实图片节点；页面要求整页滚动吸顶时，先检索公共列表组件，吸顶头与默认内容必须使用职责明确的独立插槽，禁止通过空数组、重复列表或子滚动容器模拟；首次骨架沿用同项目已确认模式，并以真实业务数据判断，不让固定入口抑制或穿透骨架；参考交互必须追踪到最终动作链，不能只迁移页面跳转。
+-   **验证结果**：已定点扫描本次页面与组件，不存在 URL 型背景、CSS sticky、`scroll-x`/`scroll-y`、Grid、复杂选择器、百分比 `min-height`、条件命名插槽或模板选项运行时断言；确认我的页面主体只保留 `CellList` 的一个 `list-view`，已发布和收藏内容不再包含滚动容器。按用户要求未执行构建；`sticky-header` 吸顶、动态内容高度、媒体加载和发布选择弹框仍待 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`AGENTS.md`、`docs/uniapp-x-vapor-rules.md`、`components/CellList/`、`pages/mine/index.uvue`、`pages/mine/component/PublishedWaterfallList/`、`pages/mine/component/FavoriteWaterfallList/`、`pages/mine/component/PublishedFilterPopup/`、`pages/mine/component/PublishWorkEntry/index.uvue`、`pages/publish/component/PublishWorkPickerPopup/index.uvue`；参考项目 `src/pages/personal/index.vue`、`src/components/Account/ProfileHeader.vue`、`src/components/Account/MembershipCard.vue`、`src/components/Account/FilterSheet.vue`。
+
+## 2026-09-09 — 我的页面吸顶容器与指定瀑布流实现错误
+
+-   **任务范围**：我的页面整页头部滚动、页签吸顶、已发布与我的收藏瀑布流及首次骨架。
+-   **不满意表现**：上一轮为了维持单个 `list-view`，将已发布和收藏改成手工双列，并继续扩展 `CellList`；结果既没有按需求使用 `rice-waterflow`，实际吸顶也没有生效。修正开始时又准备在 `CellList` 内增加嵌套模式，没有先采用用户指出的现有 `ScrollList`。
+-   **根因**：把“不嵌套普通滚动容器”的早期要求机械理解为禁止 Rice Waterflow 自身滚动，没有结合用户最新指定组件重新选择官方嵌套滚动方案；同时只检索了原页面正在使用的 `CellList`，遗漏了职责更匹配的 `ScrollList`。
+-   **正确处理**：我的页面外层改用 `ScrollList`，新增的嵌套模式将资料头、独立吸顶区和固定高度内容区分开；内容区中的 `rice-waterflow` 设置 `associative-container="nested-scroll-view"`，外层先滚完资料头，再由内层接续滚动，吸顶区停留在顶部。已发布和收藏均恢复 `rice-waterflow-item`，分页及下拉刷新归还各自列表；首次骨架沿用首页的独立双列结构与一次性状态，已发布骨架使用与默认作品卡及发布入口一致的 `456rpx + 38rpx` 总高度。
+-   **预防规则**：用户指定具体公共组件时，先全仓检索其接口和现有职责，再决定是否扩展；涉及 Vapor 吸顶与子滚动时，先按官方 `scroll-view` 嵌套滚动协议核对父子职责，不用手工分栏替代明确指定的 Waterflow，也不继续扩展职责不匹配的列表组件。吸顶渲染、默认内容和内层分页必须保持独立。
+-   **验证结果**：已定点检查修改文件不存在手工 `columns` 分栏、父级分页版本、`scroll-x`/`scroll-y`、URL 型背景、Grid、CSS sticky、复杂选择器和百分比 `min-height`；两个业务列表均包含 `rice-waterflow`、`rice-waterflow-item` 与 `associative-container="nested-scroll-view"`。按用户要求未构建，嵌套手势交接、吸顶位置和原生 Waterflow 测量仍需 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`components/ScrollList/`、`pages/mine/index.uvue`、`pages/mine/component/PublishedWaterfallList/`、`pages/mine/component/FavoriteWaterfallList/`、`docs/conclusion.md`。
+
+## 2026-09-10 — App 页面高度与安全区组合触发 CSS 编译错误
+
+-   **任务范围**：页面全屏高度、弹框最大高度以及底部安全区占位。
+-   **不满意表现**：App + Vapor 编译器拒绝 `height: 100vh`，并拒绝 `padding-bottom: calc(固定 rpx + env(safe-area-inset-bottom))`，导致相关页面样式编译失败。
+-   **根因**：页面样式沿用了浏览器视口单位和 CSS 计算表达式，没有先按 uni-app x App 支持的属性值集合收敛；安全区还继续使用了不适合作为项目统一方案的 `env()`。
+-   **正确处理**：全屏根容器改用 `height: 100%`，弹框上限改用百分比，公共滚动组件默认高度同步移除 `vh`；固定底部间距保留为明确 `rpx`，额外安全距离拆为真实占位节点并设置 `height: var(--uni-safe-area-inset-bottom)`，其余项目内底部 `env()` 也统一替换为该变量。
+-   **预防规则**：App + Vapor 的高度属性禁止使用 `vh`/`vw`；App 安全区不通过 `calc()` 与固定间距相加，固定间距和安全区必须分层表达，安全区统一使用 `var(--uni-safe-area-inset-bottom)`。这两项同时写入根目录 `AGENTS.md`，后续修改 CSS 前纳入静态扫描。
+-   **验证结果**：已扫描项目业务源码，排除 `unpackage/` 与禁止修改的 `uni_modules/` 后，不再存在高度属性中的 `vh`/`vw`、包含安全区的 `calc()` 或 `env(safe-area-inset-bottom)`；`git diff --check` 未发现空白错误。按用户要求未执行构建，实际 App 编译和各设备安全区高度仍待 HBuilderX 验证。
+-   **关联文件**：`AGENTS.md`、`components/ScrollList/index.uvue`、`components/Tabbar/index.uvue`、`pages/library/`、`pages/media/preview.uvue`、`pages/member/`、`pages/mine/`、`pages/publish/`、`docs/conclusion.md`。
+
+## 2026-09-09 — 积分详情与实名认证页面未按参考结构校准
+
+-   **任务范围**：会员中心的积分详情模式，以及实名认证页的说明、证件图片、身份信息 Cell 和底部提交区。
+-   **不满意表现**：积分详情的摘要比例、筛选位置和账单行结构与关联项目不一致；实名认证缺少参考页的隐私说明卡，卡片间距、上传区和提交按钮尺寸有偏差，身份信息 `rice-cell` 没有垂直居中。
+-   **根因**：上一轮只替换了不兼容的背景实现，没有同时核对积分详情的完整层级和可感知尺寸；实名页也没有复用个人设置已验证的 `center + 98rpx` Cell 对齐方式。
+-   **正确处理**：积分详情将月份和账单类型筛选收入同一圆角面板，按参考页恢复摘要、装饰图和独立账单卡片的尺寸及金额颜色；实名页补充隐私说明卡，统一上传卡、信息卡和底部按钮尺寸，所有信息 Cell 显式启用 `center`、`98rpx` 行高和固定标题宽度；底部安全区使用独立 `var(--uni-safe-area-inset-bottom)` 节点。
+-   **预防规则**：用户要求“参考关联项目整体样式”时，背景资源、区块层级、摘要比例、筛选归属、列表项结构和底部操作区必须一次性逐项对照；同类 Rice Cell 先搜索当前项目已验证页面的 `center`、行高、标题宽度和值样式，不依赖组件默认对齐。
+-   **验证结果**：已使用 HBuilderX 内置 Prettier 格式化修改文件，并定点确认本次页面不存在 URL 型背景、旧安全区缩写、条件命名插槽或 UnoCSS 引用，`git diff --check` 通过。按用户要求未执行构建，Android/iOS Vapor 下的背景层级、原生列表卡片间距、Cell 垂直居中和底部安全区仍需真机确认。
+-   **关联文件**：`pages/member/index.uvue`、`pages/mine/real-name.uvue`、`docs/conclusion.md`；参考项目 `src/pages/points/component/PointsDetailView.vue`、`src/pages/personal/real-name.vue`、`src/components/Account/RealNameForm.vue`、`src/components/Account/SettingsCard.vue`。
+
+## 2026-09-09 — 业务骨架尺寸与我的页面重复鉴权状态
+
+-   **任务范围**：发布作品选择弹框和创作记录首次骨架，以及 `pages/mine/` 页面和私有列表的登录状态分支。
+-   **不满意表现**：发布作品弹框的骨架声明尺寸与真实作品卡相同，但实际显示仍是组件默认矩形尺寸；创作记录为每行骨架补充独立 key 后，动画节点也只按 `rect` 默认宽度展示，未铺满整行；应用已限制未登录用户只能停留在登录页，“我的”及其子页面仍重复显示登录占位、跳转登录或阻止数据加载。
+-   **根因**：`rice-skeleton-item` 的 `rect` 类型在组件内部使用固定尺寸，页面局部 class 在 App + Vapor 组件样式隔离下不能可靠改写其内部宽高；页面没有把全局登录前置约束作为入口契约，继续保留了旧的访客态兼容分支。
+-   **正确处理**：选择弹框改用页面真实 `view` 骨架节点，显式设置与作品卡一致的 `100% × 468rpx` 和圆角；创作记录需要保留 Rice 渐变动画，因此通过组件根节点的内联样式明确传入 `100% × 108rpx` 和圆角，同时保留行级唯一 key；`pages/mine/` 移除 `isLoggedIn`、`loggedIn`、登录占位和二次登录跳转，资料、会员、积分、已发布与收藏均直接按已登录状态加载；账号注销成功后的退出登录流程继续保留。
+-   **预防规则**：需要严格贴合业务卡尺寸的简单骨架优先由页面真实节点承载；必须保留 Rice 动画时通过 `style` 属性传入明确宽高，不依赖跨组件 scoped class 覆盖组件内部固定尺寸；全局路由已保证鉴权时，受保护页面不再重复维护访客 UI 和登录守卫，避免首帧错误分支阻止请求。
+-   **验证结果**：已静态确认发布弹框骨架和真实作品卡均为 `100% × 468rpx`，创作记录动画节点接收 `100% × 108rpx` 内联尺寸，`pages/mine/` 不再包含 `isLoggedIn`、`loggedIn`、`logged-in`、登录后提示或去登录入口，账号注销成功后仍会回到登录页。按用户要求未执行构建、样式或 UTS 检测，App + Vapor 下骨架宽度与动画、瀑布流首次加载和受保护页面入口仍待 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`pages/publish/component/PublishWorkPickerPopup/index.uvue`、`pages/library/component/CreationRecordList/index.uvue`、`pages/mine/index.uvue`、`pages/mine/settings.uvue`、`pages/mine/real-name.uvue`、`pages/mine/cancellation.uvue`、`pages/mine/component/PublishedWaterfallList/`、`pages/mine/component/FavoriteWaterfallList/`、`docs/conclusion.md`。
+
+## 2026-09-09 — 列表骨架与分页状态职责混用及实名认证长期状态错误
+
+-   **任务范围**：首页、我的已发布/收藏 Waterflow，公共 `CellList` 的骨架与尾部状态，以及实名认证长期有效选项。
+-   **不满意表现**：首页和我的列表通过外层 `v-if/v-else` 在整块骨架与 Waterflow 间切换，数据集切换和分页共用“加载中”；`CellList` 需要额外骨架开关并会在非触底请求中显示 loading 文案；实名认证把空结束日期当作长期，且复选框自身点击没有可靠同步表单字段。
+-   **根因**：没有区分 Waterflow 普通子项与整行 `load-more` 插槽职责，也没有记录请求由初始加载、数据切换、下拉刷新还是触底分页触发；`CellList` 仅根据外部 `loading` 推断尾部状态。长期状态则同时用布尔值和空字符串表达，复选框的内部点击又会阻止外层 Cell 点击。
+-   **正确处理**：三个 Waterflow 保持常驻，骨架改为与发布作品弹框一致的真实 `view` 子项并参与瀑布流测量，`load` 插槽只显示空态、错误、结束和触底分页反馈；数据集切换先清空旧项并展示骨架，独立 `loadingMore` 只在触底分页期间显示“加载中”。`CellList` 删除独立骨架开关，使用 `loading + 请求来源` 自动隐藏数据并显示骨架，骨架不受尾部 `showLoadState` 控制，仅在自身触底请求后显示 loading 文案。实名认证只有结束日期明确为“长期”才勾选，勾选状态与结束日期统一同步，并为复选框点击补齐变更处理。
+-   **预防规则**：多列骨架不得放入 Waterflow 整行尾部插槽；公共列表要在触发入口记录 refresh/loadingMore，而不是仅从 `loading` 猜测。相同业务状态不能同时用空值和明确枚举值表达，子控件阻止冒泡时必须单独连接其 change 事件。
+-   **验证结果**：已静态确认三个 Waterflow 不再使用外层骨架 `v-if/v-else`，骨架均为普通 `rice-waterflow-item`，`load` 插槽中的“加载中”只依赖 `loadingMore`；`CellList` 不再包含 `skeletonEnabled` 或空闲“继续上拉加载”，并由触底、刷新状态决定骨架或分页反馈；实名认证长期值与 `idCardValidEndDate` 同步。按用户要求未执行构建，Android/iOS Vapor 下的 Waterflow 重测、CellList 手势状态和 Rice Checkbox 点击仍待 HBuilderX 真机确认。
+-   **关联文件**：`pages/main/index.uvue`、`pages/mine/component/PublishedWaterfallList/index.uvue`、`pages/mine/component/FavoriteWaterfallList/index.uvue`、`components/CellList/`、`pages/library/component/AssetCellList/index.uvue`、`pages/mine/real-name.uvue`、`docs/uniapp-x-vapor-rules.md`、`docs/conclusion.md`。
+
+## 2026-09-10 — 发布选择弹框、键盘上推与我的页面嵌套滚动交接异常
+
+-   **任务范围**：发布作品选择弹框与预览入口、个人设置和发布页键盘行为、个人设置 Cell 对齐，以及我的页面外层吸顶和内层 Waterflow 手势交接。
+-   **不满意表现**：选择作品弹框高度不稳定且列表无法纵向滚动；发布页点击整个已选资源都会重新打开选择弹框；输入框聚焦会推动页面；“隐私与账号”箭头停在标题后；我的页面没有形成“外层资料区先滚完、内层瀑布流再滚动”的手势链，吸顶后状态栏也没有白色背景。
+-   **根因**：弹框内容使用固定 `rpx` 高度叠加百分比最大高度，在自动高度弹层中没有形成可靠的滚动视口；改为明确高度后，Vapor 版 Rice Waterflow 仍会在弹框位移动画期间异步测量绝对定位子项，弹框完全显示后没有再次调用其已暴露的 `relayout()`，内部内容高度可能停留在不稳定结果；发布页把选择事件绑定在整个资源容器；输入组件沿用默认 `adjust-position=true`，且页面仍保留隐式页面滚动；无值 Cell 继续使用固定标题宽度；外层 `ScrollList` 没有转发滚动状态，内层 Waterflow 仍开启回弹，页面无法按吸顶阶段同步状态栏。
+-   **正确处理**：选择弹框依据 `windowHeight` 生成明确 `px` 高度并让 Waterflow 占满该视口，在 Popup `opened` 后等待一次 `nextTick` 并调用 Waterflow 的 `relayout()` 重新计算内容高度；已选资源点击进入统一媒体预览，仅“替换”按钮阻止冒泡后打开选择弹框；两个页面输入组件关闭 `adjust-position`，并在 `pages.json` 禁止页面自身滚动；无值隐私 Cell 恢复 Rice Cell 默认的 `flex: 1` 标题布局；外层滚动事件由 `ScrollList` 转发，两个关联 Waterflow 关闭回弹，资料区完全收起后切换状态栏为白色。
+-   **预防规则**：弹层中的原生滚动组件必须由受支持的明确高度形成视口，不能依赖自动高度父级中的百分比上限；弹框内使用异步测量布局的 Waterflow 时，应在弹框打开动画结束后调用组件现有重排能力，不能只依赖首次挂载测量；资源预览与替换入口要拆分点击区域并处理冒泡；不需要原生键盘推页时显式传 `adjust-position=false`，自有 `scroll-view` 页面同步关闭隐式页面滚动；无值 Rice Cell 不传固定标题宽度；Vapor 父子滚动按 `disableScroll + associative-container="nested-scroll-view"` 建立关系，并由外层滚动阶段驱动吸顶附属状态。
+-   **验证结果**：已定点确认 `pages.json` 可解析，Popup `opened` 已连接 Waterflow 暴露的 `relayout()`，本次修改文件通过 `git diff --check`，未出现 `vh`/`vw`、安全区 `calc()`/`env()`、URL 型背景、`scroll-x`/`scroll-y` 或新增匿名事件类型。按用户要求未执行构建；弹框重排后的滚动、键盘位置、父子手势交接和状态栏切换仍需 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`components/ScrollList/`、`pages.json`、`pages/publish/index.uvue`、`pages/publish/component/PublishWorkPickerPopup/`、`pages/mine/index.uvue`、`pages/mine/settings.uvue`、`pages/mine/component/ProfileEditorPopup/`、`pages/mine/component/PublishedWaterfallList/index.uvue`、`pages/mine/component/FavoriteWaterfallList/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-10 — 空数据被强转为对象 Prop
+
+-   **任务范围**：API 空数据进入对象类型状态和组件 Prop 的统一处理。
+-   **不满意表现**：模板规则接口无数据时，`TemplateRulePopup` 收到字符串 `""`，触发 `Expected Object | Null`；同类问题也可能出现在其他对象接口调用方。
+-   **根因**：统一响应解包把后端用于表示“无数据”的空字符串直接断言为泛型对象，使错误值越过 API 边界。
+-   **正确处理**：统一响应解包在顶层响应或 `data` 为零长度字符串时返回 `null`，让对象调用方保持声明的 `Object | Null` 契约。
+-   **预防规则**：动态响应在泛型断言前必须先归一化后端空值，禁止把 `""` 强转为对象模型或通过放宽 Prop 类型隐藏问题。
+-   **验证结果**：仅定点检查了规则接口赋值链和 `unwrapResponseData` 的现有调用；按用户要求未执行构建、样式验证或 UTS 检测，实际接口空响应仍需 App 联调确认。
+-   **关联文件**：`utils/response.uts`、`docs/conclusion.md`。
+
+## 2026-09-10 — 创作输入资源选择后媒体骨架无法结束
+
+-   **任务范围**：创作功能输入条选择资源后，公共 `MediaViewer` 的图片加载状态闭环。
+-   **不满意表现**：在 `CreationInputStrip` 选择图片资源后，媒体内容已具备可展示地址，但卡片仍可能一直被骨架屏覆盖。
+-   **根因**：图片资源变化时会先清空 `readySource`，地址解析完成后却只有在 `readySource` 已等于当前资源时才关闭 loading；新图片首次进入时该条件不成立，关闭骨架完全依赖后续 `load` 事件，而重建的原生图片节点复用缓存时不能依赖该事件再次完成状态收口。
+-   **正确处理**：图片原始地址或缩略图地址解析成功并提交给图片节点后立即结束骨架状态；`load` 事件继续负责 ready 通知和成功状态同步，图片错误、缩略图回退与 OSS 原图重试逻辑保持不变，视频仍按封面可见和播放状态关闭 loading。
+-   **预防规则**：媒体 loading 必须由本层可确定完成的异步阶段形成闭环；图片地址解析成功后不得把关闭骨架唯一绑定到原生 `load` 回调，视频则继续区分地址解析、封面可见和实际播放状态。
+-   **验证结果**：已静态检查选择资源后的 `src` 监听、OSS/缩略图解析、图片 ready/error 回退以及视频 loading 分支，`git diff --check` 通过。按用户要求未执行构建编译，App + Vapor 下缓存图片重建后的显示仍需 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`components/MediaViewer/index.uvue`、`pages/creation/component/CreationInputStrip/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-10 — 素材上传后 App 原生列表行复用失配
+
+-   **任务范围**：素材库初次加载、页签切换和上传完成后的三列数据展示。
+-   **不满意表现**：初次展示已经正常，但上传完成后即使打印确认素材数组正确，列表仍会全部空白或回到首轮尺寸异常；拆分动态 header、强制重建列表实例以及只调整 `loading/nextTick` 时序都没有稳定解决，部分方案还影响首次进入和页签切换。
+-   **根因**：三列行 key 拼接了行内全部素材 ID，新素材按时间倒序插入首位后，后续每行都重新分组并整批换 key；`CellList` 又把结构不同的上传首行、普通行和尾部不足行放入同一个原生复用类型，并只向业务插槽传下标，父组件通过另一条响应链读取 `rows[index]`。上传成功时 `CreationUploadButton` 还立即通过动态 key 销毁并重建 `UploadFile`，与整表刷新叠加。数据层正常，但 App Vapor `list-view` 的行身份、复用类型和插槽数据发生失配。上一轮将问题归因于 loading 帧合并不成立。
+-   **正确处理**：`CellList` 支持由调用方传入包含稳定 key 和明确 type 的行描述，并同时向插槽传递行 key；素材行 key 只表达上传/普通结构、稳定行位置和单元数量，业务素材仍以自身 ID 作为单元 key，插槽按行 key 获取数据，不再依赖下标对应。上传首行、普通满行和尾部不足行分别进入不同复用类型；无列表模式上传成功后由 `UploadFile` 清理内部完成项，移除 `CreationUploadButton` 的动态 key 重建；撤回无效的请求前 `nextTick` 时序补丁。
+-   **预防规则**：App 原生多列列表不得用全部子项 ID 组成行 key，也不得让不同子树共用一个 `list-item type`；跨组件作用域插槽必须让原生行身份与业务数据通过同一个 key 对齐。上传控件需要恢复可选状态时优先清理内部状态，不在原生列表行内用动态 key 强制重建组件。没有渲染链证据时不得把数据正常、视图空白归因于请求或 loading 时序。
+-   **验证结果**：已定点核对上传成功事件、素材重载、三列分组、`CellList` 行描述和插槽取数调用链，并检查旧 `itemKeys + index` 调用方仍由兼容分支支持；按用户要求未执行构建、样式验证或 UTS 检测，上传后首行更新、末行数量变化、连续上传和管理态切换仍需 App 真机确认。
+-   **关联文件**：`components/CellList/index.uvue`、`components/CellList/types.uts`、`components/UploadFile/index.uvue`、`components/UploadFile/types.uts`、`pages/creation/component/CreationUploadButton/index.uvue`、`pages/library/composables/useLibraryWorkspace.uts`、`pages/library/component/AssetCellList/index.uvue`、`pages/library/component/AssetCellList/types.uts`、`docs/uniapp-x-vapor-rules.md`、`docs/conclusion.md`。
+
+## 2026-09-11 — 已发布瀑布流头插顺序失配
+
+-   **任务范围**：发布作品返回后，我的页面已发布 Waterflow 的数据刷新和展示顺序。
+-   **不满意表现**：接口数组已经按创建时间倒序更新，但新作品仍渲染在瀑布流末尾；同轮提出的嵌套视口和空态滚动改造随后被明确取消。
+-   **根因**：Rice Waterflow 按子组件挂载顺序维护内部注册表，业务 ID 作为外层 key 进行头插时，新挂载子项会注册到旧子项之后；仅调用 `relayout()` 只能重算现有注册项的位置，不能修正注册顺序。
+-   **正确处理**：只保留已发布 Waterflow 的头插修复：外层子项使用稳定的位置 key 保持注册顺序，卡片绑定随当前位置响应式更新；数据提交并完成 `nextTick` 后调用组件现有 `relayout()` 重测高度和位置。撤销 `ScrollList` 视口测量、空态退出嵌套滚动、收藏 Waterflow 改造及相关事件类型。
+-   **预防规则**：对按挂载顺序注册子项的原生长列表做头插更新时，先区分列表位置身份与业务内容身份，不能只依赖业务 ID key 或只调用重排方法；用户取消同轮其他方案时，只保留明确指定的问题修复及其直接依赖。
+-   **验证结果**：定点确认已发布 Waterflow 保留位置 key、响应式卡片绑定和数据更新后的 `relayout()`，被取消的 `stickyHeightPx`、`nestedEnabled`、`scrollableChange` 及收藏列表重排逻辑均已撤销；相关脚本通过 TypeScript 语法解析和 `git diff --check`。按用户要求未执行构建，发布返回后的首项位置仍需 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`components/ScrollList/`、`pages/mine/index.uvue`、`pages/mine/component/PublishedWaterfallList/`、`pages/mine/component/FavoriteWaterfallList/`、`docs/conclusion.md`。
+
+## 2026-09-11 — 结果页分享与下载共用 loading
+
+-   **任务范围**：创作结果页的下载、系统分享临时文件准备，以及公共 `useDownload` 状态注入能力。
+-   **不满意表现**：点击“分享”准备临时文件时会同步触发“下载”按钮的 loading，界面错误显示“下载中”。
+-   **根因**：结果页的下载保存与分享准备文件共用同一个 `useDownload()` 控制器，`prepareFile()` 和 `download()` 都改写控制器唯一的 `loading`，而该状态又直接绑定到下载按钮。
+-   **正确处理**：`useDownload` 支持传入可选的外部 `Ref<boolean>`，未传时仍创建并返回内部 loading；两个结果页入口为下载操作注入页面下载状态，分享准备文件使用独立的默认实例，并以分享实例自身 loading 阻止重复分享。
+-   **预防规则**：同一页面复用异步 composable 执行语义不同的操作时，先确认可见状态的归属；只绑定到某个按钮的 loading 不得被其他后台准备流程共用。公共 composable 需要允许调用方管理状态时，应保留默认内部状态并支持显式注入，避免破坏现有调用方。
+-   **验证结果**：已静态检查两个 `CreationResultView` 调用入口，下载只改写传入的 `downloading`，分享只改写独立控制器的内部 loading；其余 `useDownload()` 无参数调用保持原行为，相关文件通过 `git diff --check`。按用户要求未执行构建，App 系统分享、重复点击和下载/分享并发仍需 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`composables/useDownload.uts`、`pages/creation/component/CreationWorkflowView/index.uvue`、`pages/useTemp/index.uvue`、`pages/creation/component/CreationResultView/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-11 — 我的空态滚动与发布选择弹框刷新状态失配
+
+-   **任务范围**：我的页面已发布标题样式、已发布/收藏空态滚动区域，以及发布作品选择弹框的 App 纵向滚动。
+-   **不满意表现**：已发布标题在 App 未按外部文字类展示，但收藏标题正常；列表最终为空时页面仍能滚动；发布选择弹框改为 `scroll-view` 后仍无法滚动，而最近项目弹框可以滚动；恢复瀑布流后，触底加载节点消失与新数据布局不同步，底部内容产生位置突跳；开启自定义下拉刷新后普通纵向滚动再次失效。
+-   **根因**：已发布卡片在按位置复用的 Waterflow 子项中又用作品 ID 强制重建整棵卡片子树，导致 `rice-text` 外部类随内容更新不稳定；空态继续使用与有数据状态相同的固定内层高度，使外层总内容仍多出整个资料区。Rice Waterflow 的 load 插槽位于异步测量的绝对定位内容容器之后，分页结束时条件卸载整个加载节点会先缩短滚动范围，新子项测量完成后内容高度才增长，因而出现跳变。刷新失效则只在 Popup 内开启 `refresherEnabled` 时复现：首页相同刷新闭环正常、弹框禁用 refresher 后正常滚动，说明问题是 Rice Popup 根节点的 `@touchmove.stop` 与 Vapor 内部 `scroll-view` 原生 refresher 手势识别组合冲突，不是 `refreshing` 值、瀑布流高度或自定义插槽缺少尺寸。
+-   **正确处理**：继续使用 `rice-text` 与 `text-class`，移除已发布卡片内层业务 ID key，只保留 Waterflow 外层位置 key，并为组件根节点提供明确宽度；两个瀑布流保持挂载并只向页面回传是否有真实数据，空态时从固定内容区扣除资料区高度，使外层总高度恰好收敛到当前视口；发布选择器恢复原有 `rice-waterflow/rice-waterflow-item`、骨架、触底分页和打开后 `relayout()`。有数据时始终保留固定高度的 load 尾部，只切换其内部加载/结束内容，加载文案仍仅在触底请求期间出现。最终取消弹框内全部 refresher 属性、插槽和手势状态；我的页面发布入口及发布页替换入口每次调用 `openPicker()` 都重新请求第一页，空态错误仍可通过原有重试事件刷新。
+-   **预防规则**：原生 Waterflow 的位置身份与卡片响应式内容更新不得通过嵌套动态 key 相互叠加；需要保留原生列表实例的空态应调整父级可滚动内容总高度，不用条件卸载列表，也不能继续保留有数据状态的固定溢出高度；Waterflow 的 load 插槽若参与滚动范围，分页前后保持外层节点和占位高度稳定，只切换内部反馈。弹框内开启原生 refresher 前必须检查 Popup 祖先的 touchmove 拦截；页面内刷新成功不代表 Popup 内相同配置可用。未确认公共组件修复范围前，不修改 `uni_modules`。
+-   **验证结果**：已静态确认发布选择器保持两列 Rice Waterflow；有数据时 load 尾部固定为 `120rpx`，加载内容只由 `loadingMore` 控制；组件不再包含任何 refresher 属性、插槽或状态，`openPicker()` 每次执行 reset 请求。按用户要求未执行构建；分页后底部稳定性、重复打开请求和弹框滚动仍需 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`pages/mine/index.uvue`、`pages/mine/component/PublishedWaterfallList/`、`pages/mine/component/FavoriteWaterfallList/`、`pages/publish/component/PublishWorkPickerPopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-11 — 我的页面子刷新手势阻断嵌套滚动
+
+-   **任务范围**：我的页面外层资料区、吸顶区与已发布/收藏 Waterflow 的嵌套滚动、下拉刷新和骨架阶段高度。
+-   **不满意表现**：内层已经设置 `associative-container="nested-scroll-view"`，手势仍不能形成“父容器先收起资料区、吸顶后子瀑布流继续滚动”；固定高度和固定吸顶阈值在部分设备上不能同时到达；初始骨架又被当作空数据，加载阶段父级没有滚动空间。
+-   **根因**：两个子 Waterflow 自身启用了原生 refresher，顶部手势先进入子刷新识别链，阻断 Vapor 的父子嵌套滚动交接；外层组件同时使用 `flex: 1` 和 `height: 100%`，而内容区仍按窗口高度推算，实际可视高度与推算值可能不同；吸顶状态又单独使用固定 `rpx` 阈值。列表只按真实数据数量回传内容状态，因此请求中的骨架被误判为空态。
+-   **正确处理**：移除两个子 Waterflow 的全部 refresher 属性、插槽和状态，只保留 `associative-container`；由外层 `ScrollList` 承接自定义 refresher 和 `PullDown` 展示，通过当前激活列表的 reload 版本发起刷新，并由列表 reset 请求结束事件关闭刷新态。`ScrollList` 测量自身真实可视高度后交给页面计算内层固定视口，吸顶使用外层事件的 `scrollHeight - viewportHeight` 实际滚动上限；骨架或真实数据存在时均保留嵌套滚动空间，只有请求结束后的真实空态收敛高度。
+-   **预防规则**：Vapor 关联滚动的子容器不得同时承担原生下拉刷新，页面需要刷新时优先放到最外层滚动容器；嵌套视口和吸顶临界值必须来自同一个实际外层高度来源，不能混用 `height: 100%`、窗口推算值和独立固定阈值；决定空态滚动能力时应区分初始 loading、真实数据和最终空态，骨架不能按最终空态处理。
+-   **验证结果**：已定点确认两个子 Waterflow 仅保留关联滚动与触底分页，外层自定义 refresher 位于 `scroll-view` 末尾并使用明确高度；受影响文件通过项目 Prettier 配置解析和格式化，CSS 未新增视口单位、`calc()`、`env()`、URL 型背景或关系选择器。按用户要求未执行构建，父子手势交接、外层下拉刷新和状态栏吸顶仍需 HBuilderX Android/iOS 真机确认。
+-   **关联文件**：`components/ScrollList/`、`pages/mine/index.uvue`、`pages/mine/component/PublishedWaterfallList/`、`pages/mine/component/FavoriteWaterfallList/`、`docs/conclusion.md`。
+
+## 2026-09-11 — 积分详情背景断层、刷新状态与分页结束条件
+
+-   **任务范围**：积分详情摘要、筛选列表背景，以及 `CellList` 原生下拉刷新和触底分页的统一状态闭环。
+-   **不满意表现**：摘要和详情列表之间出现白色背景断层；下拉刷新后不回弹并显示加载失败，上一轮增加轻提示后仍未解决功能问题，而且刷新失败后触底加载被锁住。
+-   **根因**：页面级 `point-detail_shadow` 和列表区的 `integral-list-bg.png` 职责没有按最终设计明确分层，修改背景断层时误把列表专用背景资源直接移除。分页问题则是没有先对照素材库创作记录的完整状态机：刷新状态由额外包装函数维护，请求函数又分别改写 loading、error、page 和 finished；上一轮用 `nextTick` 与错误提示补偿表现，并在失败时保留旧 `finished`。后续虽然统一了请求入口，但又把 `nextItems.length < PAGE_SIZE` 与总量判断直接使用 `OR`，导致首屏不足一页而 `totalCount` 仍有后续数据时提前把 `billFinished` 置为 `true`，`CellList` 的触底控制器因此拒绝继续派发加载事件。
+-   **正确处理**：页面级 `point-detail_shadow` 保留为积分详情底层装饰，`point-detail_list` 内使用真实 `<image>` 节点铺设 `integral-list-bg.png`，筛选和列表内容以更高层级展示，不使用 App 不支持的 URL 型 CSS 背景。账单请求改为与创作记录一致的 `reset + fromPull` 单一入口，由一次请求统一开启和关闭 loading、refreshing、error、page、finished；reset 立即恢复第一页可加载状态，拉取刷新失败不展示错误提示，finally 必定关闭刷新；普通追加按账单 ID 去重；`totalCount` 可用时只以累计数量是否达到总量判断完成，缺失总量时仅在接口返回空页后结束分页。
+-   **预防规则**：设计提供页面装饰图和区块背景图时，先明确各资源的容器归属、覆盖范围和层级，再用独立真实 `<image>` 节点实现，不能因修复交界颜色直接删除区块专用资源。长列表状态异常时先对照项目内已验证列表的整个请求状态机，不单独补偿某一个提示或时序；loading、refreshing、page、finished 和 error 应由同一个请求入口成组提交，reset 后不能让旧 finished 阻断新的触底请求。存在后端总量时必须以累计数量和 `totalCount` 为完成依据；单页数量只能作为无总量契约时的兜底，不能与总量判断直接使用 `OR` 提前结束。
+-   **验证结果**：已对照素材库 `CreationRecordList → useLibraryWorkspace.loadRecords` 调用链，并核对 DCloud 当前 `height`、`background-color`、边框和 `list-view` 文档；定点确认积分页不再包含刷新错误 Toast 或独立刷新包装函数，reset 后可重新触底，追加页按 ID 去重；完成分页门禁的分支静态检查。仓库没有 `package.json` 且系统无独立 Prettier，无法执行项目格式化命令；按用户要求未执行构建，App + Vapor 下刷新回弹、连续分页和会员 Tab 半透明边框仍需 HBuilderX 真机确认。
+-   **关联文件**：`pages/member/index.uvue`、`pages/member/component/PointDetailList/index.uvue`、`pages/member/component/MemberCenter/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-12 — 积分详情频繁下拉后刷新与触底分页同时失效
+
+-   **任务范围**：积分账单只读 POST 查询、原生 `list-view` 刷新状态周期，以及刷新失败后的分页游标提交。
+-   **不满意表现**：真机频繁下拉后，列表停留在“下拉刷新”文字且不能回弹；列表仍可滚动、总数超过首屏数量，但滚动到底不再加载下一页。继续排查发现 Android 只有给积分列表承载区设置固定 `400px` 后才会触发 `scrolltolower`；公共 `CellList` 或调用点使用 `height: 100%` 均无效，而同一条件的数据重载又会清空已有账单并重新展示整表骨架。
+-   **根因**：积分账单第一页是参数相同的 POST 查询，却继续经过请求层 1 秒相同 POST/PUT 重复提交保护；频繁下拉会在真实请求前立即失败，使 `refreshing` 在极短周期内恢复为 `false`，原生刷新器可能没有收到稳定的触发与关闭状态。请求前同时直接把分页游标重置为第一页，刷新失败后触底又会请求第一页，并可能继续被相同请求保护拒绝；结束状态只信任总量时也无法在后续明确空页时收口。后续只约束了外层 Flex 高度，没有为 Android 原生 `list-view` 建立明确的自身滚动视口；即使拆为独立页面，积分列表与素材库仍存在一项关键结构差异：素材库的 `CellList` 直接参与全屏面板的 Flex 分配，积分详情在列表外还有 `point-detail_list-content` 承载层。Android 原生列表默认使用子项总高时，这层只有 `flex: 1` 的容器会被列表固有内容高度撑开，最终内容高度与滚动容器高度相同，因而没有可滚动距离；账单 reset 还无差别清空已有数据，公共列表也只依据 `loading` 显示骨架，导致同条件刷新表现为整表重新加载。
+-   **正确处理**：仅为积分账单只读查询关闭重复提交保护，不改变全局提交接口防重；下拉刷新在发请求前等待一次 `nextTick`，确保原生列表先接收刷新中状态。请求使用局部 `requestPage`，页码和结束状态只在成功响应后提交；下拉失败保留原列表、原页码和原结束状态，任何后续空页都结束分页。会员中心保留在 `pages/member/index.uvue`，积分详情迁移为独立的 `pages/member/point-detail.uvue`；页面私有列表承载层使用 `height: 0px + flex: 1` 建立主轴分配基准，不硬编码设备高度，也不修改公共 `CellList`。真机进一步确认首批 10 条内容未形成足够的触底滚动区，而查询 20 条后可以正常滚动加载，因此取消窗口剩余高度的动态测量和页面 `onReady` 传递链，保留 20 条分页大小。骨架仅在列表没有现有条目时展示；积分详情同条件 reset 保留现有数据，成功后原位替换，只有切换账单类型或月份时先清空旧数据并展示新条件骨架。
+-   **预防规则**：POST 形式的分页读取接口不能机械套用写操作防重；原生 refresher 的控制值必须形成可观察的 `false → true → false` 周期。分页页码、累计数据和结束状态应按成功响应事务化提交，刷新失败不得提前破坏下一页游标；总量可用时仍要允许明确空页作为结束边界。判断 `scrolltolower` 是否失效前，必须同时确认首批内容总高确实超过列表视口；固定高度或动态测高不是内容不足时的正确补偿。页面私有承载层优先保持稳定的 Flex 高度链，禁止在没有必要时引入窗口尺寸计算和生命周期 Prop。已有数据的后台刷新不能切回首次骨架，数据集条件真正变化时再由页面显式清空旧数据。
+-   **验证结果**：已静态确认积分账单接口单点设置 `repeatSubmit: false`，其他 POST/PUT 防重保持不变；下拉请求在 `nextTick` 后发出，旧请求版本会被拦截；页码仅在成功后递增，空页会结束分页。公共 `CellList` 不含固定高度；已删除 `getBoundingClientRectAsync()`、`windowHeight`、`layoutReady`、动态高度样式和测量监听，积分详情私有承载层恢复 `height: 0px + flex: 1`，分页大小保留为 20。已执行本次模板、类型、CSS 兼容和空白检查；按用户要求未执行构建，Android 20 条首屏下的连续分页与下拉回弹仍需真机确认。
+-   **关联文件**：`api/user/index.uts`、`components/CellList/index.uvue`、`pages/member/index.uvue`、`pages/member/point-detail.uvue`、`pages/member/component/PointDetailList/`、`composables/useMemberPayment.uts`、`pages.json`、`utils/request.uts`、`docs/conclusion.md`。
+
+## 2026-09-13 — 跨端视频上下文、首页媒体点击与积分 SVG 失效
+
+-   **任务范围**：素材库预览、首页视频播放和模板点击、公共媒体组件的跨端 VideoContext，以及积分图标的 iOS 展示。
+-   **不满意表现**：打开或关闭预览时出现 `null is not an object (evaluating '__props.item.mediaKind')`；第一轮修改后视频进入预览仍没有自动播放，重播会先重新显示封面；继续把组件实例传给 VideoContext 后 Web 点击播放和暂停失效。后续反馈显示，签名地址解析完成时的单次播放请求仍可能早于 App 原生视频节点就绪，导致素材预览停留在封面。首页首个可见视频未自动播放，点击视频只会就地播放而不是进入使用模板页；`integral-icon.svg` 在 iOS 不显示。
+-   **根因**：父级把可空的 `previewItem` 通过非空断言传给必填对象 Prop，Vapor 更新或卸载批次中子组件仍可能先收到 `null`，而模板和计算属性同步读取了对象字段。公共 `MediaViewer` 位于自定义组件内部，App 需要传当前组件实例才能稳定定位内部视频节点，但把相同作用域参数无差别应用到 Web 又破坏了 Web 的上下文查找；第一轮重播通过更新 key 重建原生视频并重置首帧状态，因此封面必然再次覆盖。素材预览的显式播放只在地址解析完成后的一次 `nextTick` 内调用，没有在封面完成加载、原生节点更稳定的现有 `ready` 边界再次触发。首页首批数据提交时只依赖候选数组监听选择活动视频，没有在 Waterflow 子项完成渲染后重新选择；媒体组件默认 `tapToPlay` 又优先消费视频点击，外层原生卡片点击不能稳定收到事件。积分 SVG 则通过 `pattern/use/xlink` 引用了内嵌的大尺寸 base64 PNG，增加了 iOS 图片组件的 SVG 解码兼容风险。
+-   **正确处理**：把预览 Prop 按真实状态建模为可空，父级移除非空断言，子组件增加根空态边界并仅向媒体组件传递安全的标量计算值；视频预览默认静音自动播放，并在媒体现有 `ready` 事件到达后补发一次 `playVideo()`，使自动播放不再只依赖签名地址解析后的单次渲染时机，仍保留手动播放和音量切换。公共媒体组件通过条件编译处理 VideoContext：App 保存并传入自身 `ComponentPublicInstance`，Web/小程序继续只按视频 ID 查询；重播在同一原生节点上执行 `seek(0)` 和 `play()`，不再修改 key 或撤下已就绪视频帧。首页数据提交并完成 `nextTick` 后主动选择首个完整可见视频；首页媒体关闭 `tapToPlay`，直接承接 `MediaViewer` 的 click 事件进入使用模板页，文字区也显式绑定同一跳转，收藏仍阻止冒泡。积分图标改成不含 `defs`、`xlink` 和 data URI 的直接矢量。
+-   **预防规则**：Vapor 条件卸载链路传递可空对象时，Prop 类型和子组件都必须覆盖真实的 `null` 过渡，禁止只依赖父级 `v-if` 和非空断言；要求 App 自动播放的视频默认静音。自定义组件使用 `createVideoContext` 时必须同时验证节点时序和平台查找范围，App 组件作用域参数不能直接复用于 Web；结束态重播应优先复用同一原生节点。原生预览中不能只在地址解析后的 `nextTick` 单次请求自动播放；有封面的视频应在媒体 `ready` 边界补发播放，不用任意延时猜测原生节点时机。原生媒体卡要求点击跳转时，关闭组件内部播放手势并从组件公开事件接管跳转，不能依赖视频事件冒泡到外层容器；需要首屏自动播放时，在列表子项提交后的渲染批次重新计算活动项。App 本地 SVG 避免用 `pattern/use/xlink` 包裹 base64 位图。
+-   **验证结果**：已完成空值读取、VideoContext 条件编译、同节点重播、首页首批数据后可见性刷新、媒体点击事件和 SVG 结构的定点静态检查；素材预览现在会在现有 `ready` 事件后调用已暴露的 `playVideo()`，未引入 App 不支持的视频事件或任意延时；仅有的 `loadedmetadata` 位于 Web/微信小程序条件编译块，受影响文件通过 `git diff --check`。按用户要求未执行构建，素材预览自动播放、Web 播放暂停、App 首屏自动播放、首页点击跳转、iOS 预览重播和积分图标仍需对应平台实际运行确认。
+-   **关联文件**：`components/MediaViewer/index.uvue`、`components/MediaViewer/types.uts`、`pages/main/index.uvue`、`pages/library/index.uvue`、`pages/library/component/AssetPreview/index.uvue`、`pages/library/component/AssetPreview/types.uts`、`static/icons/svg/integral-icon.svg`、`docs/uniapp-x-vapor-rules.md`、`docs/conclusion.md`。
+
+## 2026-09-14 — App 后台错误信息丢失与失败后短时无法重试
+
+-   **任务范围**：统一请求层的响应结构读取、后台错误码与错误信息提取，以及 POST/PUT 重复提交保护。
+-   **不满意表现**：后台已经返回 `error.message`，登录失败仍未展示具体原因；前一次修改只调整了异常捕获边界，没有解决 App 运行时响应对象无法直接读取的问题。POST/PUT 请求返回后仍保留固定一秒拦截，快速重试会直接失败。
+-   **根因**：关联项目的普通 TypeScript 响应可以直接按对象属性读取，当前 App + UTS bytecode 却把未知响应体直接断言为 `UTSJSONObject` 并调用 `getAny`，运行时对象未完成 UTS JSON 结构转换时会读不到根字段及嵌套 `error.message/code`。错误判定还只依赖 HTTP 状态和业务码，无法覆盖 `code` 为空但存在 `error` 对象的后台错误包。重复提交则使用最近一次请求时间，而不是当前仍在进行的请求集合，请求成功或失败都不会立即释放。
+-   **正确处理**：在统一响应读取边界将对象或 JSON 字符串转换为当前平台可读取的 JSON 对象，再按后台实际层级提取根业务码、嵌套错误码和 `error.message`；只要存在后台 `error` 对象就进入失败处理。重复提交改为按 URL、query 和 data 生成进行中请求 key，请求结束的 `finally` 中无论成功、业务失败或网络失败都立即移除，只拦截尚未返回的相同 POST/PUT。
+-   **预防规则**：App 的未知接口响应不得仅靠 `as UTSJSONObject` 假定运行时结构；需要动态读取后台错误包时必须在请求边界完成一次明确的 UTS JSON 转换，并同时覆盖 HTTP 状态、业务码和错误对象。重复提交保护必须绑定请求生命周期，在统一 `finally` 中释放，不得用固定时间窗口阻止已经结束请求的重试。
+-   **验证结果**：已静态核对后台示例 `{ error: { code: null, message: ... } }` 会命中错误对象并提取具体信息；确认进行中请求 key 覆盖 query 与 data，且统一在请求 `finally` 中释放。已执行差异和空白检查；按用户要求未执行构建编译，Android/iOS App 的真实登录错误包和并发重复点击仍待 HBuilderX 真机联调。
+-   **关联文件**：`utils/request.uts`、`docs/conclusion.md`；参考项目 `../ai-commerce-app-view/src/utils/request.ts` 仅用于响应行为对照，未修改。
+
+## 2026-09-15 — 普通字符串响应被误送入 JSON 解析
+
+-   **后续补充（2026-10-26）**：Web 的底层 `uni.request` 默认 JSON 解析早于业务响应归一化，后者跳过 URL 不能阻止此前的 `Unexpected token 'h'`。仅在 `getFileUrl/getFileUrlV2` 的 Web 条件块指定 `dataType: "text"`，请求入口透传该选项，未指定时沿用底层默认配置；缩略图地址对象、上传签名及 App 三端不改变。归一化仅对 Web 显式 text 响应解码带外层引号的 JSON 字符串，裸 URL 原样返回，JSON 错误对象继续由原链路提取。11 个内存范围及响应场景、源码格式和差异检查通过；未构建或连接手机，Web 真实接口仍待联调。
+
+-   **任务范围**：统一请求层对对象、JSON 对象字符串、普通文本、数组和二进制响应的类型分流。
+-   **不满意表现**：后台返回签名 URL 等普通字符串时，请求层仍调用 `JSON.parseObject`，出现 `Unexpected token 'h'`，导致合法的非 JSON 响应无法继续交给业务层。
+-   **根因**：为解决 App 动态响应对象字段读取问题而新增的归一化函数，把所有非空字符串都视为 JSON 文本；异常捕获只能作为解析失败回退，不能替代解析前的数据类型和文本外形判断。项目中的 OSS URL、聊天流和生成流本来就允许返回普通字符串。
+-   **正确处理**：响应为字符串时先去除首尾空白，仅将以 `{` 开头、具有 JSON 对象外形的文本送入平台 JSON 解析；URL、流式内容和普通文本保持原值。已有对象继续在请求边界转换为可读取的 UTS JSON 对象，数组、`ArrayBuffer`、空值和其它基本类型直接保留。
+-   **预防规则**：统一请求层不得把“字符串”等同于“JSON 字符串”，也不得用 `try/catch` 代替解析前分流；需要读取错误包时只解析明确具有 JSON 对象外形的文本，文本接口与媒体 URL 必须保持原始返回类型。
+-   **验证结果**：已静态确认 `https://...`、普通文本、数组和 `ArrayBuffer` 不再进入 JSON 解析，`{"error":...}` 形式的错误对象字符串仍可提取后台错误信息；已执行差异与空白检查。按用户要求未构建编译，App/Web 的真实 URL、流式文本和字符串错误包仍待联调。
+-   **关联文件**：`utils/request.uts`、`docs/conclusion.md`。
+
+## 2026-09-15 — 上传视频封面与素材入库链路分裂
+
+-   **任务范围**：公共文件上传的视频首帧提取、创作输入封面展示，以及创作页和素材库的用户上传素材保存。
+-   **不满意表现**：上传视频成功后，创作输入卡片没有封面；补充封面后，创作素材选择弹框和素材库页仍同时出现“OSS 已上传但保存素材失败”，页面层还会在素材保存完成前收到成功事件。
+-   **根因**：公共 `UploadFile` 最初只上传视频对象，没有提取并持久化首帧。补充封面后又把 OSS 上传和素材创建拆在页面层：公共上传先触发成功，创作弹框提前选择并关闭，两个页面再各自调用一次创建素材；同时根据接口模型中可选字段自行给创建请求增加 `size/duration`，与关联项目已经验证的实际上传载荷不一致。首次修复还基于“普通视频只提交 `value`”这一过时判断新增了可选 `inputCovers` 展示状态，既没有满足视频参数契约，又因直接调用可空数组的 `.find()` 引入点击错误。
+-   **正确处理**：视频选取后通过 `uni.getVideoInfo` 读取 `thumbTempFilePath`、大小和时长，先把首帧作为图片上传，再上传视频；完成项统一携带封面对象键、大小和时长，并交给 `MediaViewer`。参考关联项目把可选素材入库收回公共上传链路：OSS 完成后仅以 `name/url/assetType/coverUrl/sourceType` 创建素材，校验返回素材 ID，需要时再关联目标文件夹，全部成功后才向页面触发成功；创作弹框和素材库页面删除重复创建，仅消费成功结果或刷新列表。工作流参数按后台输入定义分支：视频直接把 `value/coverUrl` 写入 `inputData`，系统提示词写入 `value/url/displayValue/coverUrl`，图片和图片列表只写入 `value`，其他参数通过设置入口只写入 `value`；删除临时的 `inputCovers` 类型、状态、Prop 和传递链。
+-   **预防规则**：视频上传链路必须同时建模原视频和展示封面，不能把本地首帧路径当作可持久化地址。上传组件声明“保存到素材库”时，OSS 上传、素材创建和可选目录关联属于同一个成功边界，页面不得在公共组件回调后重复创建素材；接口类型中的可选字段不等于当前业务必须提交的字段，迁移时以已确认载荷为准，不能为“补全元数据”擅自扩大写请求。修改流水线字段前必须区分视频、系统提示词、图片和其他参数四类契约，并以后台输入定义作为分类依据；视频封面是提交参数，不得另建仅供展示的平行状态。
+-   **验证结果**：已静态核对视频选择、首帧提取、封面与视频 OSS 上传、公共素材创建、目录关联、完成事件和两个入口；确认两个入口不再重复调用创建接口，素材创建请求不再发送 `size/duration`，并通过 `git diff --check`。同时确认视频工作流提交 `value + coverUrl`，系统提示词提交完整展示字段，图片、图片列表及其他参数只更新 `value`，项目内不再存在 `inputCovers` 传递链。按用户要求未执行构建编译；`thumbTempFilePath` 获取、Android/iOS 视频上传、真实素材创建响应及目录关联仍需 HBuilderX 真机联调。
+-   **关联文件**：`components/UploadFile/index.uvue`、`components/UploadFile/types.uts`、`composables/useOssUpload.uts`、`composables/useCreation.uts`、`api/asset/types.uts`、`pages/creation/component/CreationSourcePopup/index.uvue`、`pages/creation/component/CreationInputStrip/`、`pages/creation/component/CreationWorkflowView/index.uvue`、`pages/useTemp/`、`pages/library/`、`docs/conclusion.md`；关联项目上传逻辑仅作行为参考，未修改。
+
+## 2026-09-17 — AI 标识复用后列表尺寸过大
+
+-   **任务范围**：MediaViewer 的 AI 生成标识及素材库“我的作品”列表。
+-   **不满意表现**：列表缩略图沿用预览页的大标识，占用画面过多。
+-   **根因**：标识迁入公共组件时仅统一显隐，没有区分缩略图与大图预览的尺寸场景。
+-   **正确处理**：新增 `aiGeneratedSize`，支持 `small/medium/large`；作品列表明确传入 `small`，默认 `large` 保留原预览样式。
+-   **预防规则**：复用角标时同时检查字号、容器尺寸、内缩距离和圆角，不能直接把大图规格用于缩略图。
+-   **验证结果**：已核对三档独立样式和列表参数，通过差异空白检查；按用户要求未构建编译，App 实际比例仍需真机确认。当前缺少 Prettier，未执行自动格式化。
+
+## 2026-09-17 — 搜索页滚动事件反向回写控制位置
+
+-   **任务范围**：首页模板搜索页的结果瀑布流、手势滚动和换词回顶。
+-   **不满意表现**：用户反馈搜索页存在滚动卡顿。
+-   **根因**：页面在每次 `scroll` 事件中把实际位置写入响应式 `scrollTop`，该值又通过 `rice-waterflow` 的 `scroll-top` 属性传入原生滚动容器，使手势滚动持续触发额外的响应式更新和程序化位置回写。这是代码与模拟测试已确认的高频开销；尚未进行设备帧率分析，不能据此断言它是所有卡顿的唯一原因。
+-   **正确处理**：手势事件只更新非响应式位置记录，不再下发滚动指令；提交关键词时才同步当前位置，并在 `nextTick` 后设置为 0，保证连续搜索均能回顶。通过版本号使清空、快速搜索和页面卸载时的旧回顶任务失效。首页播放、搜索页静态封面、历史记录、骨架和分页逻辑保持不变，不修改 Rice UI。
+-   **预防规则**：区分滚动位置观测值和程序化滚动控制值；需要回顶的列表不得把高频 `scroll` 事件直接回写到绑定的 `scroll-top`。异步回顶必须保留请求/操作失效边界；性能修正先验证具体高频链路，不通过延时或重建列表掩盖问题。
+-   **验证结果**：模拟测试中 1000 次手势事件产生 0 次响应式滚动指令变化，原回写模型产生 1000 次；连续搜索回顶、清空取消旧任务和快速换词的版本控制检查通过。搜索页脚本语法、格式与空白检查通过，搜索卡片仍固定 `active=false`。按用户要求未执行构建；Android/iOS Vapor 的快速甩动、分页和实际帧率仍待真机验证。
+-   **关联文件**：`pages/main/search.uvue`、`docs/conclusion.md`；`uni_modules/rice-ui/` 仅只读检查。
+
+## 2026-09-18 — 登录页媒体查询替换未采用自适应布局
+
+-   **任务范围**：验证码登录、密码登录及共用登录样式。
+-   **不满意表现**：修复不支持的媒体查询时，改成了窗口高度判断和两套样式分支，用户要求直接自适应。
+-   **根因**：保留了原有固定留白和断点设计，仅替换触发方式，没有通过布局消除高度分支。
+-   **正确处理**：删除高度判断 composable 和 compact class；内容容器使用百分比高度及明确 rpx 最小高度，三处留白通过 Flex 按比例吸收剩余空间，品牌、表单和登录方式区域不收缩，较小视口由现有纵向 scroll-view 承载。
+-   **预防规则**：处理页面高度适配时先检查大块固定留白能否改为 Flex 伸缩；不为可通过布局解决的问题增加窗口监听或断点状态。App 最小高度不用百分比，控件尺寸与可伸缩留白分别设置。
+-   **验证结果**：三个登录文件已按根目录 Prettier 配置格式化；差异空白检查通过，登录目录中已无媒体查询、compact class 或 useAuthLayout 引用。已核对官方 Flex、height 和长度单位说明；未运行 HBuilderX，Android/iOS Vapor 的不同屏高、键盘弹出及密码页图形验证码展开仍待真机验证。
+-   **关联文件**：`pages/login/auth.css`、`pages/login/index.uvue`、`pages/login/password.uvue`、`docs/conclusion.md`；已删除上一轮新增的 `pages/login/composables/useAuthLayout.uts`。
+
+## 2026-09-18 — 素材预览启动无响应缺少失败闭环
+
+> 下述 15 秒启动检测与定时重建已在后续“播放链路多入口与加载闪烁”任务中撤回，不能继续作为实现建议。
+
+-   **任务范围**：素材库视频预览的启动确认、失败恢复和生命周期取消。
+-   **不满意表现**：上一轮分离封面请求并保护播放命令后，用户仍反馈偶发时长为 0、不能播放，隐藏再显示才恢复；该行为是故障现象，不是要求以页面切换作为修复手段。
+-   **根因**：已确认原代码只有发送播放命令和原生 error 的失败路径，缺少无 error、无进度的启动无响应处理；封面可见和 play 事件也不能证明视频进度真正推进。原生播放器为何偶发无响应尚未通过真机日志确认，不能断言唯一原因是节点就绪时序。
+-   **正确处理**：保留封面独立请求、挂载节点校验和播放命令版本保护；素材预览单独启用 15 秒启动失败期限，以原生进度相对启动位置的推进确认启动，而非封面 load、命令发出或单独 play 事件。错误与启动超时共用一次视频重新解析/重建预算，再失败显示重试入口和提示。手动暂停、隐藏、结束、切源及卸载清理启动计时。撤回本轮中途新增的隐藏保留节点方案，不以切换页面作为恢复条件；列表视频默认不启用启动计时。
+-   **预防规则**：区分命令提交、原生播放事件和有效进度确认，启动无响应必须有取消边界和有界恢复；失败期限不能用于延时猜测就绪，实际弱网阈值需要设备验证。区分用户暂停、生命周期暂停和播放结束，不能把任何 pause 事件都当作用户取消播放。不得把用户描述的恢复现象误读为目标交互。
+-   **验证结果**：已定点检查启动、错误预算、隐藏/显示、用户暂停、结束、切源和卸载分支；本次修改文件按根目录配置格式化并进行差异空白检查。按用户要求未执行构建、样式或 UTS 检测；App 真机的启动、弱网、连续进入和原偶发时长为 0 的问题仍待确认，尚不能宣称已达到稳定播放验收。
+-   **关联文件**：`components/MediaViewer/index.uvue`、`components/MediaViewer/types.uts`、`pages/library/component/AssetPreview/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-18 — 播放链路多入口与加载闪烁
+
+-   **任务范围**：素材预览入口、页面显隐、OSS 源与封面解析、公共媒体组件、预览控制条及创作结果调用方。
+-   **不满意表现**：加入启动期限后，原偶发故障变得频繁，正常播放/暂停也会显示加载并闪烁；用户要求完整分析并修复链路，不再叠加补丁。
+-   **根因**：代码可确认存在多个启动入口：原生 autoplay、源解析完成、视频 ref 挂载、active 变化及父层 ready 补播。播放意图同时绑定原生 autoplay 并发送 VideoContext 命令；每次 playVideo 又重新打开整屏骨架及计时，正常续播也会被遮挡，无进度期限进一步触发签名刷新和节点重建。原生 src 在首次创建时与 autoplay 等配置同时提交、视频 key 同批次变化也是初始化竞争风险，但尚无真机事件日志证明它是最早时长为 0 的唯一根因。
+-   **正确处理**：移除期限、定时重建、视频动态 key、所有初始化补发 play 和父层 ready 补播。源变更先提交旧节点卸载，再解析地址；挂载空源视频并提交原生配置后，在 ref 有效的渲染批次绑定视频源，由原生 autoplay 负责首次启动。autoplay 是节点初始化快照，手动播放/暂停不修改它；用户命令有版本和节点身份保护、重复命令去重，迟到事件不能覆盖最新意图。骨架仅用于源地址解析，准备和缓冲交给原生 show-loading；封面解析和降级只影响封面。初始化 pause 不取消 autoplay，循环 ended 保留下一轮播放意图；原生控制条不再叠加根点击切换。只有实际网络错误的 OSS 视频允许刷新签名一次，解码/内部错误直接进入可重试失败态，并记录不包含鉴权 URL 的错误分类。
+-   **保留与替换**：保留关联项目的静音自动启动、原生事件回写时间与控制条、同节点 seek(0) 重播和显式重试行为；不迁移其 DOM 播放器、renderjs 或传统 uni-app 实现。创作结果页只移除同一 ready 补播调用，保留原有分享等未提交改动；不修改 Rice UI、OSS 缓存契约或 CSS。
+-   **预防规则**：媒体初始化只能有一个启动负责方，不能用属性、ref/watch、父级 ready 和定时器同时控制播放。用户命令不触发地址解析、骨架、key 或自动播放属性变化；原生事件只确认状态，不能再发起一轮启动。区分初始 pause、手动 pause、显隐和循环结束。对原生无响应尚未取得事件与错误证据时，不能用超时重建声称根因已修复。
+-   **验证结果**：此前执行的 8 个隔离业务场景及启动归属断言通过，但不证明原生兼容；临时验证脚本已按用户要求删除。修改文件按根目录配置格式化并检查差异空白。按用户要求未进行构建、样式或 UTS 检测；Android/iOS Vapor 的首屏启动、反复进入、暂停续播、弱网和显隐仍需真机确认。
+-   **关联文件**：`components/MediaViewer/index.uvue`、`composables/useMediaPreviewPlayback.uts`、`pages/library/component/AssetPreview/index.uvue`、`pages/creation/component/CreationResultView/index.uvue`、`docs/conclusion.md`；此前新增的 `playbackTimeout` Prop 已删除。
+
+## 2026-09-21 — 输入编辑层与键盘使用双动画导致上推割裂
+
+-   **任务范围**：文件夹新建/重命名、昵称/简介编辑和会员邀请码绑定的键盘交互。
+-   **不满意表现**：先尝试继续优化公共 `Popup`，仍然保留了“底部弹框进入”和“系统键盘弹起”两套动画；用户实际要求是不改变业务内容和入口，但不再通过弹框承载输入编辑层。
+-   **根因**：输入框在 `page-container` 完成进入动画后才聚焦，随后键盘高度又修改容器 `bottom`，导致内容先出现再被键盘二次顶起。后续错误地用全局 `uni.onKeyboardHeightChange` 同时驱动位置和动画时长，但该全局回调没有 `duration`，导致 `transition-duration` 无法获得有效值，内容只能跳到最终位置，不能追随键盘动画。撤销试验方案时，过渡声明还一度被误放到遮罩类，实际移动的内容层缺少过渡样式。
+-   **正确处理**：新增页面级常驻 `KeyboardPanel`，不使用 `page-container`；业务内容全部由外部默认插槽传入，组件只统一控制遮罩、输入焦点、位置、命中状态和关闭生命周期。组件通过插槽把统一处理函数交给实际输入框，由输入框自身的 `keyboardheightchange` 提供 `event.detail.height/duration`，一次更新 `transform` 目标位置及过渡时长。内容透明度与遮罩不做动画、在键盘事件到达时立即显示，关闭时保留内容到键盘下降完成。输入内容关闭默认上推并保持键盘，简介 textarea 在 fixed 区域显式启用 `fixed`。
+-   **预防规则**：需要内容贴随键盘的交互不能同时使用底部弹框位移动画。动画同步必须使用输入组件 `@keyboardheightchange` 的 `event.detail.height/duration`；全局 `uni.onKeyboardHeightChange` 没有动画时长，不能用于驱动同持续时间的位移过渡。回退样式时必须按完整选择器复核，移动属性和过渡属性必须位于同一个内容层，不能只检索属性是否存在。公共键盘附着层只负责位置和生命周期，标题、输入、按钮及业务状态由插槽持有；隐藏节点必须同步关闭命中，输入提交期间用 `confirm-hold`/`hold-keyboard` 保留键盘，成功关闭再统一调用 `uni.hideKeyboard()`。
+-   **验证结果**：已静态确认三个业务输入均关闭 `adjust-position`、绑定自身 `keyboardheightchange` 并把事件交给公共面板，面板只读取 `event.detail.height/duration`，不再注册全局键盘监听；简介 textarea 启用 `fixed`，且未修改 Rice UI。按用户要求未执行构建，Android/iOS 的键盘升降时序、系统返回、连续开关和输入法切换仍需真机确认。
+-   **关联文件**：`components/KeyboardPanel/`、`pages/library/component/AssetFolderEditorPopup/index.uvue`、`pages/mine/component/ProfileEditorPopup/index.uvue`、`pages/member/component/InviteCodePopup/`、`docs/conclusion.md`。
+
+## 2026-09-23 — 会员中心设计稿还原与当前展示偏差
+
+-   **任务范围**：会员中心三类套餐页、积分进度条与充值弹层。
+-   **不满意表现**：头部装饰图被截断，进度条文字及箭头位置、页签下划线、套餐说明图标、横向套餐卡片和达人底部容器与设计稿不符。
+-   **根因**：装饰图位于较矮的资料行内；积分数值和箭头作为独立节点被 `space-between` 拉开；`rice-tabs` 内置下划线距底部 2px，与页面边框错位；接口图片字段直接交给 `<image>`，缺少 OSS 对象键解析路径；套餐区块宽度与底部留白沿用上一轮的局部尺寸。
+-   **正确处理**：装饰图移到头部层级，积分行按左右两组排列并使用指定的两类箭头；页签根据实际套餐显隐，统一在页签容器底边绘制选中线；说明图及套餐优惠图通过现有 `MediaViewer` 解析；普通会员卡片按 `memberDays` 和实付金额展示、原价大于零才显示；调整全宽背景、达人卡片容器与积分弹层尺寸，等级标识暂按套餐类型显示。
+-   **预防规则**：按目标截图核对元素的父容器裁切、整体坐标、数据空值和动态图片地址，不只比较单个控件尺寸。用第三方页签组件时先确认内置下划线的定位，再决定页面边框位置；异步套餐列表变化时同步校正当前页签。
+-   **验证结果**：本轮涉及的 `.uvue` 文件按根目录 Prettier 配置格式化并通过格式检查；`git diff --check` 通过，关键静态资源存在。尚未在 HBuilderX 编译及 Android/iOS 真机验证，尤其需确认模糊背景、头图层级、动态说明图和底部弹层实际观感。
+-   **关联文件**：`pages/member/index.uvue`、`pages/member/component/MemberCenter/index.uvue`、`pages/member/component/PackageDescription/index.uvue`、`pages/member/component/CommonMember/index.uvue`、`pages/member/component/StudentMember/index.uvue`、`pages/member/component/PointRechargePopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-23 — 会员中心头部与滚动区仍未适配
+
+-   **任务范围**：会员中心头部、套餐页签、说明滚动区和达人包底部说明图。
+-   **不满意表现**：上一轮调整后头部留白和头像仍偏大，页签文字与指示线中心不一致，中间说明区没有可靠地占用剩余高度，达人包图片和底部容器过高；非文字尺寸仍混用 `px`。
+-   **根因**：头部沿用 190px 高度和 54px 顶部内边距；`rice-tabs` 的内容项按自身宽度参与布局，而自绘指示线按等分容器宽度布局；说明滚动区在 Flex 链路上缺少明确的零高度收缩基准；达人包素材按较大的固定高度拉伸。
+-   **正确处理**：收紧头部并缩小头像，页签项按当前可见数量等宽分配；说明区及三类套餐内容使用 `height: 0rpx` 配合 `flex: 1` 承接剩余空间；达人包图片按原图比例显示并降低图片与容器高度。会员页非文字尺寸改用 `rpx`，文字大小及行高保持 `px`；App Vapor 不支持 `rpx` 的圆角仍保留 `px`。
+-   **预防规则**：动态页签的文字与指示线必须共用同一宽度基准；嵌套原生滚动容器应检查每级 Flex 高度约束。调整图片高度时同时核对源图比例和外层容器，不用拉伸模式补布局。单位规范需对页面和相关独立组件一起检查，圆角以目标平台实际支持为准。
+-   **验证结果**：本轮修改文件通过根目录 Prettier 格式检查和 `git diff --check`；静态检查确认非文字 `px` 只保留 App Vapor 必需的圆角值。尚未在 HBuilderX 编译或真机核对不同屏宽下的页签、滚动和图片尺寸。
+-   **关联文件**：`pages/member/index.uvue`、`pages/member/component/MemberCenter/index.uvue`、`pages/member/component/PackageDescription/index.uvue`、`pages/member/component/CommonMember/index.uvue`、`pages/member/component/ProfessionalMember/index.uvue`、`pages/member/component/StudentMember/index.uvue`、`pages/member/component/PointRechargePopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-23 — 会员页签底线在 App 未显示
+
+-   **任务范围**：会员中心页签底线、积分进度条右侧箭头和积分弹框明细入口。
+-   **不满意表现**：App 端页签底线不可见，积分进度条右侧箭头未与文字居中，积分明细仍使用文字箭头。
+-   **根因**：页签底线依赖包裹原生滚动页签的容器边框，没有独立可见节点；进度条箭头放在矮于文字行的正方形图片框中；积分明细使用字符 `▸`，与指定资源不一致。App 端边框未显示的具体绘制顺序仍需真机确认。
+-   **正确处理**：将页签底线改为紧邻 `rice-tabs` 的实色 Flex 行，选中线绘制在同一行；箭头置于与文字行等高的居中容器；积分明细改用 `right-black-arrow.svg`。
+-   **预防规则**：App 原生滚动组件旁的重要分隔线优先使用明确尺寸与背景色的独立节点；图标需按文字行高对齐，不能只依靠图片自身的 `aspectFit`；设计指定的图标不使用字符代替。
+-   **验证结果**：本轮修改文件已按根目录配置格式化并通过静态差异检查；尚未在 HBuilderX 或 Android/iOS 真机验证页签底线及箭头位置。
+-   **关联文件**：`pages/member/component/MemberCenter/index.uvue`、`pages/member/component/PointRechargePopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-23 — 积分进度条箭头不应靠固定宽度居中
+
+-   **任务范围**：会员中心积分进度条右侧数字与箭头的垂直对齐。
+-   **不满意表现**：此前为了让箭头居中额外增加固定宽度的包裹容器，改变了右侧内容所占宽度；移除后新 App 截图仍显示箭头视觉中心低于数字。
+-   **根因**：把垂直对齐问题转成额外水平占位并不合理；仅把容器高度设为文字行高，仍未消除 SVG 图形相对原生文字绘制位置的视觉偏差。
+-   **正确处理**：保持箭头原有宽度和现有 Flex 对齐，不再新增水平包裹；仅对箭头本身作 `-4rpx` 纵向光学校正。
+-   **预防规则**：解决纵向对齐时先检查行高、交叉轴对齐和图标实际画面中心，不新增固定宽度占位；静态对齐结论须用 App 截图复核。
+-   **验证结果**：已按用户新 App 截图定位偏差，修改文件通过 Prettier 格式检查和差异空白检查；校正后的 Android/iOS 实际观感仍需真机确认。
+-   **关联文件**：`pages/member/component/MemberCenter/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-23 — 会员头图与面板圆角失去对比
+
+-   **任务范围**：会员中心三类套餐头部背景、达人标识，以及套餐加载期间的页签状态。
+-   **不满意表现**：浅色头图在面板顶部已渐变到白色，头部底部和面板圆角看不出来；新提供的 App 截图进一步显示达人包同样没有顶部圆角，达人头图和标识比例不合适；套餐加载时曾显示“暂无套餐”页签。
+-   **根因**：头图固定为接近面板起点的高度；普通会员和专业版素材底端本身渐变为白色，达人背景虽然为深色，但被压成 `750×480rpx` 且恰好在面板起点结束，圆角背后仍露出白底。达人标识底图 `177×57` 被拉进 `120×44rpx` 容器。页签列表此前始终创建普通会员项，并以“暂无套餐”作空名称兜底。
+-   **正确处理**：延长两套浅色背景图的渐变范围；达人背景按原始比例用 `750×512rpx` 展示，并给页面保留深色底，使不同状态栏高度下的面板圆角背后仍有深色。头像旁三类标识最终改用已包含图案和文字的 `common-adorn.png`、`major-adorn.png`、`intelligent-adorn.png` 整图，按各自原始比例显示，不再组合底图、皇冠和文字。页签只由实际可售套餐生成，加载期间隐藏；套餐刷新后按现有类别或第一个可用类别校正选中页签。
+-   **预防规则**：圆角效果需同时检查自身半径、覆盖子层与背后颜色，不能靠压缩头部间距制造对比；头图和标识图应核对源文件宽高比，不应以任意固定尺寸拉伸。异步套餐列表未就绪时不要生成带占位名称的页签；列表增减时重新计算选中索引。
+-   **验证结果**：已根据用户提供的 App 截图核对头图与面板交界位置、素材原始尺寸及样式；本轮文件通过 Prettier 格式检查和 `git diff --check`。更新后顶部圆角和标识比例仍待 Android/iOS 真机确认。
+-   **关联文件**：`pages/member/index.uvue`、`pages/member/component/MemberCenter/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-23 — 套餐描述箭头的页签参数与列表渲染异常
+
+-   **任务范围**：会员中心三类套餐的描述箭头及其页签位置参数。
+-   **不满意表现**：新增描述箭头后先报 `tabIndex is not defined`，改为 `props` 访问后又出现 `Cannot read properties of undefined (reading 'map')`；再次调整后，箭头仍固定在原位，没有跟随选中的页签。
+-   **根因**：最初在多层子组件模板中直接按未声明的局部变量名引用新增 Props；后续箭头又使用 `v-for` 按跨层传入的 `tabCount` 生成占位列表，首次渲染时若该值未就绪，Vapor 列表映射会读取未定义源。位置方案还从 `rice-tabs` 的本地 `tabIndex` 取值，并将横坐标作为动态 `Map` 样式传入；它没有以页面实际选中的套餐类型为唯一定位依据。
+-   **正确处理**：三类套餐组件明确通过 `props` 传递页签位置；描述区只渲染一个箭头，不再为装饰图生成动态列表。由当前套餐类型在可见页签中计算索引，同时驱动下划线和箭头；箭头使用一、二、三个页签各自的明确位置类，颜色仍与描述横幅同步。
+-   **预防规则**：在 `.uvue` 中透传新增 Props 时，逐层检查类型声明、模板绑定和脚本实际变量；未显式声明的同名局部变量不要依赖模板自动暴露。装饰箭头应从实际业务选中状态和可见页签顺序推导位置，避免另建可短暂失配的索引状态，也不要为了占位把可能未就绪的参数送入 `v-for`。
+-   **验证结果**：已静态确认子组件 Props 引用、移除箭头的 `v-for`、空值位置回退与调用方参数齐全；再次修改后的页签位置需在 HBuilderX 编译及 App 真机确认。
+-   **关联文件**：`pages/member/component/CommonMember/index.uvue`、`pages/member/component/ProfessionalMember/index.uvue`、`pages/member/component/StudentMember/index.uvue`、`pages/member/component/PackageDescription/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-23 — 精选模板购买弹框正文与底部操作区共用边距
+
+-   **任务范围**：使用模板页的精选模板次数用尽弹框。
+-   **不满意表现**：真机弹框的底部开通按钮明显窄于目标图，套餐提示条固定显示较大的“温馨提示”图片，头部专业版装饰图也略小。
+-   **根因**：弹框正文将统一的 `50rpx` 水平内边距同时作用到提示、价格、权益和底部按钮，但目标图的正文信息与底部操作区使用两套宽度；提示条还直接复用了会员中心的固定文字图片，无法按专业版套餐的 `discountText` 与 `descriptionItems.warmTips` 组合展示。
+-   **正确处理**：保留弹框既有高度和正文信息位置，把正文容器水平内边距归零，再分别为提示、价格、权益和底部操作区设置对应间距；底部按钮扩展到接近面板两侧，提示条改为浅色容器并展示后台套餐文案，专业版头图按目标比例放大且不改变关闭按钮层级。
+-   **预防规则**：根据设计图还原底部弹框时，应先区分正文栅格和底部操作区栅格，不能用父容器统一 padding 代替；可变业务文案不得固化进通用标签图片，固定装饰与后台字段应拆成独立节点。
+-   **验证结果**：已按真机图与目标图的手机内容宽度换算相对尺寸，确认弹框总高度无需调整；相关文件通过差异空白、CSS 禁用项、模板括号及行宽检查。按用户要求未构建，优化后的按钮宽度、套餐文案和头图比例仍需 Android/iOS 真机复核。
+-   **关联文件**：`pages/useTemp/component/PremiumTemplatePopup/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-24 — 使用模板页免费体验提示被缩略图遮挡
+
+-   **任务范围**：使用模板页底部免费体验提示与按钮外观判断。
+-   **不满意表现**：免费体验提示被上方模板缩略图遮挡；按钮图片依据会员状态显示，与精选模板自身等级不一致。
+-   **根因**：提示绝对定位在按钮顶部之外，但操作区顶部只预留 `20rpx`，不足以容纳向上伸出的 `56rpx`；按钮外观读取用户会员状态，而非所选模板的 `templateGrade`。
+-   **正确处理**：仅在普通模板显示免费体验提示时增加操作区顶部内边距，给提示留出实际布局空间，不调整层级；黄色按钮图片改由 `templateGrade == "Premium"` 决定，会员状态仍只参与原有业务判断。
+-   **预防规则**：绝对定位装饰超出父节点时，应在相邻布局中预留对应空间；模板外观由模板属性驱动，不与用户权益状态混用。
+-   **验证结果**：已检查条件分支和差异空白；按用户要求未构建编译，提示间距仍需 App 真机确认。
+-   **关联文件**：`pages/useTemp/index.uvue`、`components/FreeTrialTip/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-24 — 免费体验提示预留边距后仍被裁剪
+
+-   **任务范围**：使用模板页的免费体验提示及模板横向列表上下间距。
+-   **不满意表现**：此前增加按钮上方内边距后，提示仍被容器裁剪，列表上下留白不一致。
+-   **根因**：uni-app x App 的 `view` 默认 `overflow: hidden`，原提示仍作为按钮的绝对定位子节点向上超出按钮，外层留白不能解除按钮自身裁剪。
+-   **正确处理**：把页面提示图移到操作区内，在操作区顶部为其预留 `56rpx`，提示图完整位于操作区范围内并覆盖按钮顶部；列表上下都使用 `16rpx` 外边距。创作弹框继续使用原公共提示组件。
+-   **预防规则**：App 中子节点若需跨越按钮边界，不应只给祖先增加留白；先检查直接父节点的默认裁剪，再将装饰图纳入可见容器自身边界。横向列表相邻两侧间距从同一列表节点设置。
+-   **验证结果**：已核对 DCloud 对 App 默认溢出行为及 `view` 裁剪的说明，静态检查确认提示图不再超出操作区、列表上下间距相同；按用户要求未构建，App 真机观感仍待确认。
+-   **关联文件**：`pages/useTemp/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-24 — 模板创建弹框的一键生成权益提示被裁剪
+
+-   **任务范围**：使用模板弹框及创作功能流水线生成按钮上方的免费体验权益提示。
+-   **不满意表现**：页面主按钮的提示裁剪已处理，但模板弹框和创作功能流水线仍把同一提示裁掉。
+-   **根因**：两个入口都曾把 `FreeTrialTip` 放在生成按钮内部，提示图以负 `top` 向上越过按钮；uni-app x App 的 `view` 默认裁剪溢出内容。
+-   **正确处理**：在各自操作区内为生成按钮增加独立包裹层，把提示图放在按钮外、包裹层内，并预留顶部空间；参数设置按钮与生成按钮保持底部对齐，提示图宽度随可用按钮宽度收缩。
+-   **预防规则**：同一悬浮装饰在多个入口复用时，逐一检查其直接父节点的裁剪边界，不能只修复其中一个入口；窄按钮内的装饰图应限制最大宽度并允许随容器缩小。
+-   **验证结果**：已静态检查两个入口的提示图始终落在操作区范围内并通过差异空白检查；按用户要求未构建编译，弹框及功能流水线在 Android/iOS 上仍需真机确认。
+-   **关联文件**：`pages/useTemp/component/TemplateCreationPopup/index.uvue`、`pages/creation/component/CreationWorkflowView/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-24 — 会员身份标识误用套餐购买状态
+
+-   **任务范围**：会员中心与“我的”页面用户名旁的会员标识。
+-   **不满意表现**：两页新增统一标识规则后，当前会员的标识都没有显示。
+-   **根因**：此前把套餐列表的 `isPurchased` 当作用户身份来源，又叠加当前会员的 `isActive` 条件；套餐购买状态与当前身份是不同契约，任一列表未返回对应已购标记时都会把标识判为空。随后按 `memberLevelName` 文案猜测等级也没有使用后端已提供的权限布尔字段。
+-   **正确处理**：两页从当前会员状态按 `hasInfluencerAccess`、`hasProfessionalAccess`、`isActive` 的优先级解析唯一标识；`isPurchased` 仅用于套餐购买按钮。“我的”页面不再为标识额外请求套餐列表。
+-   **预防规则**：用户身份从会员状态模型中的明确权限字段读取，套餐购买状态只控制具体套餐操作；不要从展示名称推断身份，也不要同时要求两个独立接口的字段成立。
+-   **验证结果**：已静态核对两页共用会员等级解析函数、标识资源存在，并通过 Prettier 与差异空白检查；Android/iOS 真机显示仍待确认。
+-   **关联文件**：`utils/memberBadge.uts`、`pages/member/index.uvue`、`pages/member/component/MemberCenter/index.uvue`、`pages/mine/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-24 — 权限字段误抑制免费体验提示
+
+-   **任务范围**：使用模板页、模板创建弹框及功能流水线生成按钮的免费体验提示。
+-   **不满意表现**：接入 `accessRequirement` 后，后台 `canFreeTrial` 允许显示提示时，页面仍可能因权限字段或模板等级而隐藏提示。
+-   **根因**：把权限弹框条件附加到原本由 `canFreeTrial` 独立控制的展示条件上，混用了两个后台字段的职责。
+-   **正确处理**：三处提示都只依据 `canFreeTrial == true` 显示；`accessRequirement` 仅控制权限弹框与生成拦截。
+-   **预防规则**：新增权限字段时先区分“提示展示”和“点击权限”两条契约，不得用新字段覆盖已确认的旧字段显示规则。
+-   **验证结果**：已静态核对三处提示条件及权限弹框判断，并检查差异空白；按用户要求未构建编译，App 真机展示仍待确认。
+-   **关联文件**：`pages/useTemp/index.uvue`、`pages/creation/component/CreationWorkflowView/index.uvue`、`docs/functional-pipelines.md`、`docs/conclusion.md`。
+
+## 2026-09-24 — 使用模板页首次选中与权限字段优先级错误
+
+-   **任务范围**：首页携带模板 ID 进入使用模板页后的首次详情、列表和权限数据合并。
+-   **不满意表现**：首次所选模板的权限弹框可能与详情不一致；目标详情未加载成功时，页面可能自动改选列表第一项；后续用户提供的详情含有效 ID 和 `workflowData`，页面仍直接显示加载失败，并报 `Cannot read properties of null (reading 'accessRequirement')`。
+-   **根因**：初始化先请求详情再请求列表，但列表命中当前模板后无条件覆盖详情的 `accessRequirement`，包括详情明确返回的 `null`；目标详情失败后仍继续执行首项兜底。首次修复又增加响应 ID 与路由 ID 的原始字符串严格相等判断。移除该判断后仍失败：真实详情不含 `accessRequirement`，列表尚未加载时 `find` 结果为空，补值分支在 UTS 运行时仍对空列表项读取了 `accessRequirement`；同一 `catch` 原本还吞掉了请求以外的初始化异常。
+-   **正确处理**：详情字段优先，仅当字段缺失、同 ID 列表项或前一选中项非空且实际提供值时补齐；模板等级、可用性、免费体验和权限字段都先显式判空，再读取对应属性，不依赖该处可选链。带目标 ID 的初始化失败不改选列表第一项；详情初始化异常保留原始日志。
+-   **预防规则**：App + Vapor 的可空列表查找结果参与跨接口字段合并时，应先显式判空再访问属性，且只有拿到实际补充值才修改对象；区分“未返回”与显式 `null`。指定实体的入口失败不可静默切换成其它实体，初始化错误边界须保留可定位的异常信息。
+-   **验证结果**：已核对用户提供的真实详情包含有效 ID、`workflowData.inputData` 且未返回 `accessRequirement`，用户提供的真机异常确认空对象属性读取；静态确认四个补值字段均显式判空后读取。仓库无 `package.json`，无法执行项目配置的 Prettier；按用户要求未构建编译，Android/iOS 修复结果仍待真机复核。
+-   **关联文件**：`pages/useTemp/index.uvue`、`docs/functional-pipelines.md`、`docs/conclusion.md`。
+
+## 2026-09-28 — 邀请页头图层级与步骤气泡定位偏差
+
+-   **任务范围**：达人邀请页头图、奖励卡、活动规则入口和参与步骤徽标。
+-   **不满意表现**：奖励卡与头图重叠时被头图遮挡；活动规则跟随固定 Navbar 且背景、换行不符合设计；三个步骤的气泡图和步骤文字定位错位。
+-   **根因**：头图和负外边距奖励区只依赖节点顺序，没有为同级节点声明明确层级；活动规则错误放入固定导航栏右侧，并让单个 `text` 在窄宽度中自动换行；步骤气泡图片与文字分别使用独立绝对定位，原生文字测量变化时无法保持整体居中。
+-   **正确处理**：为头图区和内容区设置同级相对定位层级，使包含奖励卡的内容区稳定覆盖头图；活动规则迁回头图内部，使用固定尺寸容器和两个独立文本节点显示“活动/规则”；每个步骤使用独立徽标容器同时承载气泡图和步骤文字，其余图标与说明回到纵向正常布局。
+-   **预防规则**：跨相邻区块的负外边距叠放必须在同级节点上明确前后层级；设计要求固定换行时使用独立文本节点，不依赖窄宽自动折行；背景气泡与其文字应由同一定位容器负责，禁止用两组互不关联的绝对坐标对齐。
+-   **验证结果**：已静态确认活动规则不再属于固定 Navbar，头图与内容区使用同级层级，步骤气泡和文字均位于同一徽标容器；项目 Prettier 检查、差异空白检查及 CSS 禁用写法扫描通过。未执行 HBuilderX 构建，Android/iOS 的头图叠层和步骤徽标实际显示仍需真机确认。
+-   **关联文件**：`pages/invite/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-29 — 商户入驻选择项文案偏右且出现双分隔线
+
+-   **任务范围**：商户入驻三步表单中的 `rice-cell` 选择项。
+-   **不满意表现**：商户类型、主营业务的选择提示显示在右侧，字段下方出现两条分隔线。
+-   **根因**：选择文案放在 `rice-cell` 的右侧 `value` 槽；`rice-cell` 默认底边线与外层 `rice-form-item` 的底边线同时绘制。
+-   **正确处理**：选择文案改用左侧 `title` 槽，根据是否已选择设置提示色或正文色；选择项统一关闭 `rice-cell` 边线，由 `rice-form-item` 保留一条分隔线。
+-   **预防规则**：在表单项内嵌 `rice-cell` 时，先确认文案应使用左侧 `title` 还是右侧 `value`，并明确只能由其中一层负责分隔线；同类选择项同步核对。
+-   **验证结果**：已静态确认所有表单选择项使用 `title` 且 `border=false`，Prettier 和差异空白检查通过；Android/iOS 的实际对齐与分隔线仍需 HBuilderX 真机复测。
+-   **关联文件**：`pages/merchant/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-29 — CellList 新增嵌套滚动属性运行时报未定义
+
+-   **任务范围**：邀请页嵌套滚动和公共 `CellList` 的 `associativeContainer` 属性。
+-   **不满意表现**：邀请页打开后抛出 `ReferenceError: associativeContainer is not defined`，列表无法正常渲染。
+-   **根因**：公共组件新增 Prop 后，模板直接按局部变量名读取 `associativeContainer`；当前 Vapor bytecode 运行时没有为该新增字段生成可直接读取的同名绑定，但脚本中实际可用的是 `withDefaults(defineProps())` 返回的 `props` 对象。
+-   **正确处理**：保留原有 Prop 类型和默认值，仅将模板绑定改为 `props.associativeContainer`，显式从已声明的 Props 对象读取，不增加页面兜底或重复状态。
+-   **预防规则**：在 `.uvue` 的 `withDefaults(defineProps())` 结果已赋给具名 `props` 时，新增模板 Prop 绑定应优先使用 `props.xxx`，并检查模板表达式对应的运行时绑定是否真实存在，不能只依赖类型声明通过格式化检查。
+-   **验证结果**：已静态确认模板从 `props` 对象读取属性，并通过 Prettier、差异空白和目标绑定检查；未执行 HBuilderX 构建，Android/iOS 的嵌套滚动仍需真机复测。
+-   **关联文件**：`components/CellList/index.uvue`、`components/CellList/types.uts`、`pages/invite/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-29 — 邀请页内外列表错误采用关联吸顶
+
+-   **任务范围**：邀请页外层 `ScrollList`、记录 Tabs 与内层 `CellList` 的高度和滚动职责。
+-   **不满意表现**：外层滚动高度受固定视口高度影响，滚到记录区后无法按内容底部自然结束；内层列表还与外层建立关联滚动并让 Tabs 吸顶，不符合两个容器独立滚动的需求。
+-   **根因**：此前套用了资料头部加吸顶长列表的结构，把外层可视高度减去 Tabs 高度作为内层固定高度，并为 `CellList` 增加 `associative-container`，错误扩大了本页的滚动联动范围。
+-   **正确处理**：Tabs 回到外层普通内容流；`ScrollList` 的内容区高度恢复为 `auto`；`CellList` 高度按当前记录行和加载状态计算，并限制最大值，内容超过上限后才由内层列表自行滚动。删除本页不再需要的关联滚动属性和公共组件扩展。
+-   **预防规则**：设计包含外层页面滚动和内层列表时，先确认是否要求吸顶或滚动接力；若要求相互独立，不得添加 `associative-container`，外层高度应包含内层容器实际高度，内层只设置内容高度与明确上限。
+-   **验证结果**：已静态确认页面不存在关联滚动和吸顶插槽，外层内容区为自动高度，内层列表按内容计算且最大为 `690rpx`；Prettier、差异空白和滚动职责检查通过。未执行 HBuilderX 构建，Android/iOS 的内外手势独立性与最大高度仍需真机复测。
+-   **关联文件**：`pages/invite/index.uvue`、`components/CellList/index.uvue`、`components/CellList/types.uts`、`docs/conclusion.md`。
+
+> 后续需求调整（2026-09-29）：邀请页底部列表现在需要与外层 `ScrollList` 关联滚动，但 Tabs 仍处于普通内容流，不做吸顶。仅在该页为 `CellList` 启用 `associative-container="nested-scroll-view"`；`ScrollList` 的内容高度继续为 `auto`，内层列表保留内容高度上限。此前“不关联滚动”的结论不再适用于邀请页当前需求。
+
+## 2026-09-29 — 邀请页 Tabs 与记录列表被拆成两张卡片
+
+-   **任务范围**：邀请页记录区域的 Tabs、`CellList`、卡片背景与底部安全距离。
+-   **不满意表现**：此前只给 Tabs 单独增加白色外层和浅色内层，下面的记录列表仍是另一个容器，没有形成设计稿要求的整体卡片。
+-   **根因**：把“Tabs 背景色包含下面的数据内容”误解为 Tabs 自身的双层背景，没有先确定白色外框的视觉边界应同时包住 Tabs 和列表。
+-   **正确处理**：把 Tabs 和 `CellList` 移入同一个白色外层、`#fff8f7` 内层卡片；列表高度仍由原有内容高度上限控制，最后一个可见项负责底部圆角。外层滚动末尾保留固定间距，并使用独立节点追加 `--uni-safe-area-inset-bottom` 安全区高度。
+-   **预防规则**：需求描述“整体背景包含下方内容”时，先按设计稿确认外框起止节点，再决定 Padding 和圆角归属；同一视觉卡片不得在相邻插槽中分别绘制外框。固定底部留白与安全区必须使用两个独立高度节点。
+-   **验证结果**：已静态确认 Tabs 与 `CellList` 共用同一双层卡片，旧 Tabs 独立包裹层已删除，底部固定间距和安全区节点均存在；Prettier、差异空白和目标结构检查通过。未执行 HBuilderX 构建，Android/iOS 的列表裁剪、圆角和安全区高度仍需真机复测。
+-   **关联文件**：`pages/invite/index.uvue`、`docs/conclusion.md`。
+
+## 2026-09-29 — 邀请步骤定位徽标被父容器裁剪
+
+-   **任务范围**：邀请页参与步骤卡片顶部的步骤徽标定位。
+-   **不满意表现**：`invite-step-card_badge` 改为绝对定位并越过步骤项顶部后，超出部分被容器裁剪，气泡显示不完整；放开裁剪后，中间步骤的两行文案又使整组内容因纵向居中而上移，与两侧步骤不平齐。
+-   **根因**：uni-app x App 端 `view` 默认使用 `overflow: hidden`；此前只放开了步骤卡最外层，定位徽标经过的 `invite-step-card_inner` 和 `invite-step-card_item` 仍会形成裁剪边界。步骤项还使用纵向 `justify-content: center`，不同文案行数造成内容组高度不同，居中起点随之变化。
+-   **正确处理**：在步骤卡、内层和步骤项这条定位祖先链上显式使用 `overflow: visible`；步骤项保持相对定位，徽标绝对定位到顶部外侧并提升局部层级，气泡图片改为徽标内部的绝对背景。步骤项改为从顶部统一起排并设置一致内边距，使三项图标和首行文字不受后续文案行数影响。
+-   **预防规则**：绝对定位元素需要跨出父节点时，必须逐层检查所有直接祖先的溢出属性；App 端不能按 Web 的默认可见行为推断。背景图和覆盖文字应放在同一定位容器内。并列卡片存在单行与多行文案时，不得用整组纵向居中决定图标位置，应为内容设置统一起点或固定文字槽位。
+-   **验证结果**：已静态确认徽标定位链均为 `view` 且显式允许溢出，三个步骤项使用相同顶部起点；Prettier 与差异空白检查结果见本轮验证。未执行 HBuilderX 构建，Android/iOS 的越界显示和多行对齐仍需真机复测。
+-   **关联文件**：`pages/invite/index.uvue`、`docs/conclusion.md`。
+
+## 2026-10-08 — 原生相册有数据但封面不显示，视频封面上传路径错误
+
+-   **任务范围**：创作来源弹层与 `native-album` 的 Android/iOS/Harmony 本地资源路径、上传入参和事件声明。
+-   **不满意表现**：相册和资源数据正常返回，但封面不显示；选择视频时封面上传报 `FileNotFoundException`，路径被拼成 `.../apps/<AppID>/www/data/user/0/...`；同时出现 `albumSelect` 未声明的 Vue 警告。
+-   **根因**：插件把原生缓存绝对路径直接交给框架图片和上传入口，未遵循 uni-app x 本地磁盘文件路径协议，因此被作为项目资源解析。已读取的运行产物事件表只有 `update:show/select/upload`，与源文件中的外部事件类型不一致；未确认是编译器外部类型处理还是增量产物导致，不能把重新打基座作为唯一修复。
+-   **正确处理**：使用 `uni.env.CACHE_PATH/native-album` 定义统一框架目录，三端原生操作通过对应的 `convert2AbsFullPath` 获取真实磁盘目录；相册封面、网格缩略图、导出文件和视频封面在插件出口统一转回框架路径。清理只接受 `exports` 的直接子文件，原生层继续限制清理范围。来源弹层改用显式运行时 `defineEmits` 列表声明相册选择和相机事件，原有父级监听、封面上传、OSS、素材入库和表单回填顺序不变。
+-   **预防规则**：区分原生文件系统路径、框架路径和图库 URI；不能靠补 `file://` 或随意拼协议解决三端问题。修改本地路径时必须同时检查展示、视频信息读取、上传及清理。新增组件事件不能仅核对类型，应确认运行时事件声明与父级监听一致。原生混编调用参数更新后，旧自定义基座须同步更新插件，页面热更新不能替代原生更新。
+-   **验证结果**：已通过 7 个 UTS/uvue 脚本的静态语法解析、来源弹层 SFC/运行时事件和两个父级监听检查、四类路径字段与三端缓存/清理调用检查、Kotlin/Swift 签名核对、Prettier 与差异空白检查。遵循用户要求，未构建、原生编译或真机运行；三端封面展示、视频封面上传、素材入库和重复选择仍需更新原生插件后真机确认。未修改 Rice UI、参考项目或生成目录，未保留临时验证脚本。
+-   **关联文件**：`uni_modules/native-album/utssdk/paths.uts`、三端入口与 Kotlin/Swift 混编文件、`CreationSourcePopup`、插件 README 和 `docs/functional-pipelines.md`。
+
+## 2026-10-08 — 我的功能抽屉右侧定位与全高布局遗漏
+
+-   **任务范围**：公共 `Popup` 的左右侧弹层、我的页展开入口和功能抽屉安全区域。
+-   **不满意表现**：指定 `position="right"` 的功能抽屉仍出现在左侧，顶部状态栏和底部安全距离展示不正确；展开图标缺少设计稿中的灰色圆形背景，左侧推广入口多余。
+-   **根因**：公共 `Popup` 只向 `page-container` 传递宽高，没有按官方窄宽侧边弹层示例清除对侧定位锚点；原生容器、内部包裹层和内容层没有完整的全高布局链，业务插槽又单独使用初始化时读取的 `windowHeight`，导致抽屉和原生容器高度来源不一致。
+-   **正确处理**：右侧原生容器显式设置 `left: auto; right: 0px`，左侧镜像处理；仅侧边弹层补齐包裹层全高及 body/content 的 Flex 高度链。功能抽屉使用 `height: 100%` 与内部 Flex，不再单独使用窗口像素高度；顶部按实际状态栏高度占位，底部保留一个 `var(--uni-safe-area-inset-bottom)` 节点，公共 Popup 不重复添加安全区。展开入口使用灰色圆形背景与白色指定图标，去除头部推广入口，抽屉内推广跳转保持不变。
+-   **预防规则**：`page-container` 的弹出方向不等于窄宽内容的定位约束；左右侧自定义宽度必须复核对侧锚点。全高弹层需要检查原生容器到业务插槽的完整高度链，安全区只由明确的一层负责，不能混用初始化窗口高度和原生百分比高度。
+-   **验证结果**：已核对 DCloud 的 `page-container` 侧边弹层示例与本次 CSS 属性兼容说明；修改文件通过 Prettier、定位/高度链/安全区/APP 隐私入口结构检查及差异空白检查。未执行构建或真机运行，Android/iOS 的右侧动画、状态栏、底部手势区和反复开关仍需复测；未修改 Rice UI、参考项目或生成文件。
+-   **关联文件**：`components/Popup/index.uvue`、`pages/mine/index.uvue`、`pages/mine/component/MineFeatureDrawer/index.uvue`。
+
+## 2026-10-08 — 订单骨架高度被误写为模板表达式
+
+-   **任务范围**：`pages/member/order.uvue` 的 `CellList` 骨架高度属性。
+-   **不满意表现**：模板编译报 `Identifier directly after number`，定位第 5 行。
+-   **根因**：将字符串尺寸写成 `:skeleton-height="224rpx"`，动态绑定要求 JavaScript 表达式，数字后直接跟单位不是合法表达式；格式化检查不会校验所有模板表达式。
+-   **正确处理**：改为静态字符串 `skeleton-height="224rpx"`，保持组件尺寸和分页交互不变。
+-   **预防规则**：固定单位尺寸使用静态属性；动态绑定单位字符串时必须加字符串引号或引用具名变量。格式检查之外单独解析本次修改模板的动态表达式。
+-   **验证结果**：订单页格式检查通过，11 个动态绑定表达式通过静态语法解析；未构建，App 实际编译仍由 HBuilderX 确认。
+
+## 2026-10-09 — 邀请奖励长备注挤压名称时间，空态高度不足
+
+-   **任务范围**：邀请页已发放记录排版及各 Tab 的空态、错误态视口高度。
+-   **不满意表现**：接口返回长备注后，右侧结果列撑出卡片并将名称和时间挤窄，时间折成多行；空列表还需内部滚动才能看到完整空态。
+-   **根因**：结果列使用不可收缩的自动宽度，没有限制备注占用空间；空态视口按 252rpx 设置，但公共 EmptyList 的最小高度是 360rpx。
+-   **正确处理**：头像右侧内容统一占剩余宽度，第一行展示可换行的名称及不可收缩的金额，第二行保留完整单行时间，备注以 rice-text 的 lines=1 在剩余宽度内省略。记录行改为最小高度，允许长名称撑开；空态采用 360rpx，错误态采用 420rpx 容纳重试按钮，加载态继续保留原骨架高度。
+-   **预防规则**：接入真实数据时必须用长备注核对横向 Flex 的宽度分配；只有可省略字段占弹性剩余宽度，时间和金额不得被挤压。计算列表空态高度前先检查实际空态组件及重试区的尺寸，不能复用记录行高。
+-   **验证结果**：已核对 DCloud 的 Flex、min-height、white-space 与 text max-lines 文档；状态模拟覆盖加载、空态、错误态及单条记录高度，模板结构检查与 Prettier、差异空白检查通过。未执行 HBuilderX，Android/iOS 的长名称、备注省略及空态无内部滚动仍待真机复测；临时验证脚本已删除。
+-   **关联文件**：pages/invite/index.uvue、pages/invite/composables/useInviteRecords.uts。
+
+### 后续修正：空态不应保留原生滚动列表
+
+-   **不满意表现**：空态高度增至 360rpx 后，Tabs 空内容仍可纵向拖动。
+-   **根因**：上一轮只解决了空态尺寸不足，没有移除承载空态的原生 CellList；高度足够不能保证原生滚动节点不响应拖动或回弹。
+-   **正确处理**：邀请页在请求结束且记录为空时使用普通 view 与 EmptyList；首次错误态同样使用非滚动容器并保留重试。有数据、骨架加载和带旧数据的分页错误继续使用 CellList，保留 SwiperViewer 横向切换与有数据时的关联滚动。
+-   **预防规则**：用户要求空态不可内部滚动时，必须检查空态承载节点是否仍为原生滚动组件，不能只检查内容高度或关闭下拉刷新。外层页面正常滚动与空态内部滚动须区分。
+-   **验证结果**：模板条件模拟覆盖空态、首次错误、加载、成功记录、分页错误和缺失 Tab，确认空态分支无滚动节点；Prettier 与差异空白检查通过。未执行 HBuilderX，App 空态手势及外层滚动交接待真机确认；临时脚本已删除。
+
+### 2026-10-13 后续修正：不足五条记录不启用内层滚动
+
+-   **表现**：用户继续要求短列表包含完整“已经到底了”提示，且不足五条无需内部滚动。
+-   **根因边界**：原计算已追加结束态高度，但 CellList 仍固定使用 vertical 方向和关联容器，短列表没有明确关闭纵向滚动及回弹；这可由代码确认，原生实际手势尚未真机验证。
+-   **正确处理**：记录区上限改为五条标准行的 630rpx，尾部另加 60rpx；不足五条将 CellList 的 direction 设为 none、关闭 bounces 并取消本页关联容器，五条及以上恢复关联滚动。公共 scrollEnabled 默认 true，不改变其他调用方；原空态普通容器保留。
+-   **预防规则**：短列表“不滚动”需要明确控制原生方向与回弹，不能只靠高度推算。记录区上限与尾部高度分开计算，按零条、四条、五条及超过五条验证边界。
+-   **验证结果**：实际 composable 模拟覆盖 0、1、2、3、4、5、6、10 条，滚动开关与尾部高度断言、公共默认值检查、Prettier 和差异空白检查通过。五个代码文件新增 10 行、删除 3 行；临时脚本已删除。未执行 HBuilderX，App 短列表尾部显示、外层手势以及长列表联动待真机确认。
+
+### 2026-10-13 后续修正：结束提示内部行高可能裁切
+
+-   **表现**：关闭短列表滚动并计入尾部后，用户仍反馈“已经到底了”文字显示不全。
+-   **已确认问题**：CellList 尾部内部容器固定为 34rpx，但文字行高为 17px；320px 宽屏幕下该容器只有约 14.5px，存在内部裁切风险。未取得真机测量，不能认定为所有设备上唯一原因。
+-   **正确处理**：内部容器增加 17px 最小高度；公共组件增加 loadStateHeight，默认仍为 60rpx。邀请页显式传入 96rpx，并同步将列表计算中的尾部高度改为 96rpx，保留不足五条关闭滚动的规则。
+-   **预防规则**：文字被裁切时检查从文字节点到列表视口的完整尺寸链；不能混用随屏宽缩放的容器高度与固定 px 行高而不验证窄屏。尾部实际样式与业务预留高度必须一致。
+-   **验证结果**：实际列表逻辑模拟覆盖 0、1、4、5、6、10 条及 96rpx 尾部；280 至 480px 屏宽的盒模型算术检查、默认值及属性传递检查、Prettier 与差异空白检查通过。未执行 HBuilderX，Android/iOS 完整文字显示仍待真机验证；临时脚本已删除。
+
+### 2026-10-16 后续修正：App 多条记录的结束提示仍上下裁切
+
+-   **表现**：用户确认 App 多条记录时“已经到底了”文字上下被裁切，要求修正高度计算。
+-   **根因边界**：此前仅增加 rpx 尾部预留和容器 min-height；代码仍混合 rpx 容器与 px 文本，长列表在 finished/loading 改变时还会从 630rpx 切换为 726rpx。以上尺寸变化可静态确认，尚未取得 App 原生测量，不能认定为唯一根因。
+-   **正确处理**：邀请列表在尺寸边界将记录高度转换为 px 并向上取整，结束区与页面绑定共享 48px 常量；五条及以上始终保留尾部视口，不随分页结束而增高。CellList 提示容器与文字节点明确使用 17px 高度，与行高一致，移除旧 34rpx + min-height 方案。保留不足五条不内部滚动及空态普通 view。
+-   **预防规则**：结束提示排查需同时核对文字节点、内部容器、尾部条目和列表视口；尾部展示与预留共用同一值，不能仅增加外层高度。原生列表滚到底部时避免因结束态改变视口尺寸。
+-   **验证结果**：内存执行实际 composable，覆盖 280—480px 六种屏宽、0/1/2/4/5/6/10/50 条和 idle/loading/finished/error 状态，共 192 组检查；验证尾部文字空间、短列表滚动开关及长列表视口稳定性，Prettier 与差异空白检查通过。未运行 HBuilderX，App 底部文字渲染、最后一页追加和 Tab 切换仍需真机复核；未创建临时脚本。
+
+### 2026-10-16 截图确认：两条记录时结束提示被卡片底部裁切
+
+-   **表现**：用户提供 App 截图，仅两条记录，结束提示已排在卡片最下方且被圆角容器截断；不是仅文字节点内部裁切。
+-   **根因边界**：短列表关闭内部滚动，但视口仍由条数乘以 126rpx 的估算值控制。记录行使用 min-height，文字、内边距及原生排版可能使实际内容超出估算；此前模拟只重复验证估算公式，没有检查真实 scrollHeight。截图确认尾部超出裁切边界，具体原生行高尚未测量，不能据此认定平台盒模型漏洞。
+-   **正确处理**：增加页面私有 useInviteRecordLayout，在数据提交、Tab 切换和 onReady 后通过当前 UniPage 定位列表，异步读取布局并使用包含尾部的原生 scrollHeight 撑开短列表；长列表保持原高度上限。测量绑定本次数据视图与版本，忽略刷新、切换和卸载后的过期结果。不再增大尾部、不固定业务行高、不重建列表或增加延时。
+-   **预防规则**：动态行高且不可内部滚动的列表不能把标准行高当作内容总高；模拟估算公式通过不代表原生排版通过。必须核对真实内容高度与裁切边界，保留短列表不滚动和名称完整展示。
+-   **验证结果**：执行实际布局 composable 的原生测量模拟，覆盖超出估算、向上取整、长列表跳过测量、切换 Tab、旧数据结果丢弃、刷新后重测及卸载清理；Prettier 和差异空白检查通过。未执行 HBuilderX，App 两条及四条记录、长名称、刷新和切换后的真实 scrollHeight 回传仍需真机确认。未创建临时脚本。
+
+### 2026-10-16 后续修正：恢复提示并撑开 Tabs 内容高度
+
+-   **表现**：取消结束文字后，用户确认记录内容仍显示不全，要求恢复提示，修正的是 Tabs 下方内容高度而不是 Tabs 栏高度。
+-   **根因边界**：上一轮依赖不可滚动原生列表的 scrollHeight，仍未取得现场测量确认它等于内容总高度。移除提示只能减少尾部，不能修复记录实际排版高度与容器预估高度不一致的问题。
+-   **正确处理**：恢复“已经到底了”和共用的 48px 尾部高度；短列表改为通过当前页面上的记录行节点逐一读取 getBoundingClientRectAsync，累加真实行高后追加尾部高度，用于撑开内容视口。移除列表根节点 ID 与 scrollHeight 读取方案，保留旧数据失效及卸载检查；Tabs 栏、空态、长列表上限与关联滚动不变。
+-   **预防规则**：修复内容裁切应测量实际业务节点，不能把提示显隐或增加提示高度当作内容高度修复；原生滚动属性不能在没有真机依据时被认定为完整内容高。
+-   **验证结果**：实际布局逻辑模拟覆盖两条不等高记录、换行变高、刷新、长列表上限和节点缺失；验证恢复尾部提示且不再读取 element.scrollHeight，Prettier 与差异空白检查通过。未运行 HBuilderX，App 实际行节点测量、短列表完整展示和 Tab 切换仍需真机确认。未新增临时脚本。
+
+### 2026-10-16 真机定位：测量缓存的对象身份判断始终失效
+
+-   **表现**：逐行测量后仍截断；用户再次要求仔细分析，且同意保持 Android 真机页面供诊断。
+-   **根因**：通过 ADB 读取运行中的原生视图树，确认两行各 216 物理像素、尾部 144 像素，内容总高 576，但 Swiper/list 视口只有 504。HBuilderX 临时诊断进一步确认行测量返回 72px、合计 144px，追加尾部得到正确 192px；缓存已有 192px，但 measured.view == view 为 false，计算仍退回 168px。视图对象进入 UTS 响应式缓存后的身份比较不可靠，先前纯对象模拟没有覆盖这一运行期差异。
+-   **正确处理**：列表视图显式携带请求版本号，测量缓存仅保存请求版本、记录 ID 序列和高度；采用测量值时比较这些稳定值，不再保存和比较整个视图对象。保留测量中途的数据失效、切换及卸载保护，不调整 Tabs 栏和文字行高，不修改 Rice UI。
+-   **预防规则**：UTS/响应式包装后的数据不得依赖跨缓存对象身份判断业务有效性；使用版本与稳定实体键。高度修复必须验证“测量成功 → 缓存有效 → 样式采纳 → 原生视口改变”完整链路，不能只模拟公式。
+-   **验证结果**：模拟响应式缓存为对象创建不同包装，复现旧身份不等；新逻辑通过 168px→192px、刷新版本失效、记录变化和长列表上限检查。HBuilderX 5.26 增量编译成功，用户重新打开页面后，ADB 原生视图树确认 Swiper 与 list 视口均从 504 增至 576 物理像素，完整内容也是 576；尾部位于 432—576、文字底部为 530，已完整落入视口。格式和差异检查通过，临时日志已清理。Android 两条记录场景已实机核对，iOS 与其他条数的交互未实机验证。设备上本次创建的临时布局 XML 已即时删除，未新增临时验证脚本。
+
+## 2026-10-09 — 添加账号成功后丢失返回栈
+
+-   **任务范围**：切换账号页内添加/重新登录成功后的导航与返回。
+-   **不满意表现**：APP 添加账号后返回会退出应用或出现启动页，而不是回到我的页面。
+-   **根因**：添加成功后直接 `reLaunch` 到切换账号页，关闭旧栈的同时也移除了我的页面，使切换账号页成为唯一根页；默认返回不再有业务页面可承接。启动页具体显现仍需真机复测，不能据此推断发生了退出登录。
+-   **正确处理**：最初以“我的 → 切换账号”重建栈恢复返回目标，但会先展示我的页面。按用户最终要求，添加/重新登录成功后不再导航：LoginPanel 已提交新账号会话，本页收起登录覆盖层、退出管理态、清理失效提示并刷新账号列表，立即显示新账号选中；保留现有返回栈，避免把切换账号页重新建成唯一根页。账号绑定、去重和凭据逻辑保持不变；手动切换已有账号的导航不在本次范围。
+-   **预防规则**：登录或切换会话后需要清理旧栈时，明确新栈的根页面与返回目标；需要返回的二级页面不能直接成为 `reLaunch` 的唯一根页。重建后的下一步导航放在成功回调中，不用延时猜测完成时机。
+-   **验证结果**：内存执行实际成功回调、关闭登录及清理失效状态逻辑，确认登录面板收起、管理态清除、账号列表刷新，且不调用 reLaunch/navigateTo、不改变现有页面栈；静态确认 LoginPanel 在成功回调前已提交新账号会话。Prettier 与差异空白检查通过。未执行 HBuilderX 或真机运行，Android/iOS 添加成功后的选中状态及返回后新账号数据刷新仍需确认；仅保留现有栈，不声称已清除此前残留的启动页。未新增验证文件。
+-   **关联文件**：`pages/mine/composables/useAccountSwitch.uts`。
+
+## 2026-10-10 — 数字分账进入详情连续显示两次加载
+
+-   **任务范围**：数字分账入口判断与商户详情首次展示。
+-   **不满意表现**：进入已有商户的详情时 loading 连续出现两次。
+-   **根因**：入口表单先查询 `/api/app/reward-merchant/my` 并显示加载，跳转详情后 `onShow` 再次查询同一接口，产生第二次加载。
+-   **正确处理**：入口将本次查询结果按登录会话版本临时交接给详情；详情消费后立即清除，首次展示已有结果时不再查询。直接进入、后续返回及失败重试仍查询最新资料，并阻止并发重复加载；跳转失败清除交接结果并显示重试。
+-   **预防规则**：入口为路由判断已经取得目标页面资料时，使用会话隔离的一次性交接，避免目标页面立即重复请求；不得用长期缓存或延时关闭 loading 掩盖重复查询。
+-   **验证结果**：内存执行实际页面逻辑，确认入口到详情仅一次查询、后续显示刷新、交接只消费一次、会话切换丢弃旧结果及并发去重；Prettier 与差异空白检查通过。未运行 HBuilderX，App 导航过程与加载展示待真机确认；未新增临时验证文件。
+-   **关联文件**：`pages/merchant/composables/useMerchantEntry.uts`、`pages/merchant/detail.uvue`。
+
+## 2026-10-10 — 提现方式首行对齐后整体偏上
+
+-   **任务范围**：提现页到账方式卡片和提现方式选择弹框。
+-   **不满意表现**：App 上内容整体没有垂直居中，下方留白过大。
+-   **根因**：上一轮将最小高度容器直接改为顶部对齐，只保证标题与箭头对齐，没有分开处理整个内容组在剩余高度中的居中；弹框列表行还叠加了较大的上下内边距。
+-   **正确处理**：外层纵向 Flex 容器通过 `justify-content: center` 居中完整内容组，内层横向容器保持首行对齐；列表行明确 `box-sizing: border-box`，上下内边距缩减至 16rpx。底部固定留白和独立安全区占位继续保留。
+-   **预防规则**：多行信息的首行对齐与整体垂直居中分别由内外两层容器负责，不直接把具有最小高度的整行改为顶部对齐。
+-   **验证结果**：已核对 DCloud 的 Flex 主轴居中文档，两个组件通过 Prettier 和差异空白检查；未运行 HBuilderX，App 上下留白及安全区需真机确认。未修改公共弹框、Rice UI 或参考项目。
+-   **关联文件**：`pages/withdraw/index.uvue`、`pages/withdraw/component/MethodPicker/index.uvue`。
+
+## 2026-10-12 — 营销中心非零人数但列表区域空白的后续修正
+
+-   **任务范围**：营销中心团队、收益明细、直属人员与入驻候选人数据展示及公共 CellList。
+-   **表现**：调整插槽按键取数后，用户仍反馈人数非零、卡片空白且底部提示已经到底。此前模板模拟不能证明 App 原生列表实际渲染正确。
+-   **结构问题与根因边界**：代码中非吸顶业务行与骨架行包在 template 分支中，页头与尾部则为 list-view 直接子项；这条结构差异与现象吻合，但尚无本次真机日志，不能将其认定为已验证的唯一根因。
+-   **本次处理**：业务行和骨架行均改为 list-view 的直接 list-item 循环，保留吸顶分支和分页行为；四类列表直接保存接口对象，展示读取 userId、nick、creationTime、maskedPhone、invitationIdentityType、ownRewardAmount、downlineCount、buyerNick、grantTime、remark 等原字段，不生成重命名的业务模型。收益接口没有 ID，仅在渲染层生成位置键。
+-   **预防规则**：原生列表排查必须覆盖容器子项结构、作用域插槽取数和安全空值访问；普通 Vue 模板检查不能替代 Vapor App 验证。数据映射只处理必要展示格式，不重命名后端已有字段。
+-   **验证结果**：5 个模板和脚本语法检查、四条列表请求返回对象保留断言以及非吸顶数据行直接子项检查通过；普通 Vue 渲染模拟覆盖页头与两行数据和结束提示、收益行、吸顶行及两条骨架，原生标签仅作为普通元素模拟，不证明原生注册成功。未生成临时脚本。未执行 HBuilderX 或真机运行，App 上数据行注册、页头与列表共同滚动、超过五人的内层滚动仍需复测。
+
+## 2026-10-12 — 绑卡确认按钮填写完整后仍显示禁用颜色
+
+-   **任务范围**：绑定银行卡页面确认按钮及共用表单校验。
+-   **表现**：字段填写完整后，确认按钮始终显示浅红色。
+-   **根因**：按钮背景固定为 `#fa98a4`，没有响应表单状态；校验只发生在点击提交时。
+-   **正确处理**：将现有校验提取为响应式 `validationMessage`，按钮与提交共用同一套规则；`canSubmit` 同时判断资料就绪、字段有效、协议勾选及加载/保存/上传状态。可提交时显示红色，无效时拦截点击；资料加载失败继续提供重新加载入口。
+-   **预防规则**：表单按钮的视觉状态与实际提交条件必须使用同一校验来源，不保留设计稿中的固定禁用颜色。
+-   **验证结果**：实际表单逻辑模拟覆盖完整填写、缺失字段、错误手机号、取消协议、加载/上传/保存状态及重复提交，检查通过；未执行 HBuilderX，App 响应式颜色切换待真机确认。未新增临时验证脚本。
+
+### 后续修正：确认按钮点击没有反馈
+
+-   **表现**：调整颜色后，用户反馈点击确认没有反应。
+-   **根因**：模板使用 `(canSubmit || !ready) && submit()`，当字段有值但校验不通过时短路返回，阻断了 `submit` 内的具体校验提示。该问题可以从代码确认，尚不能据此排除 App 上其他点击或键盘问题。
+-   **正确处理**：恢复直接绑定 `@click="submit"`；颜色继续由 `canSubmit` 控制，提交方法统一负责校验提示、加载失败重试及请求期间的重复点击拦截。
+-   **预防规则**：表单的视觉不可提交状态不得通过模板短路表达式静默拦截；需要告知用户具体原因的校验必须进入提交处理方法。
+-   **验证结果**：检查模板直接绑定提交函数，实际逻辑模拟覆盖错误字段显示提示、完整表单发起保存及请求期间重复点击拦截；未运行 HBuilderX，App 原生点击与键盘交互仍需真机确认。未新增临时脚本。
+
+## 2026-10-13 — 已发布空数据删除文字后仍残留尾部滚动占位
+
+-   **任务范围**：我的页面已发布列表空数据时的尾部反馈。
+-   **表现**：删除“暂时还没有审核记录”文字后，用户反馈空数据仍可滚动。
+-   **根因边界**：文字节点已移除，但 `published-list_state` 常驻，仍有上下共 172rpx 的 padding，与发布入口共同增加内层滚动内容高度。这是源码确认的多余占位；尚未运行现场页面，不能排除小屏幕实际内容溢出或平台手势行为。
+-   **正确处理**：尾部容器仅在分页加载、首次错误重试或有数据的结束态挂载；成功空数据不渲染尾部容器，保留瀑布流实例、发布入口和现有父子高度计算。
+-   **预防规则**：取消空态文字时同时检查父容器的 padding、margin 和固定高度，不能将文字不可见等同于没有布局占位。区分多余空白导致的滚动与真实内容超出视口。
+-   **验证结果**：6 种尾部状态模拟通过，成功空态无尾部占位，分页、错误和有数据结束提示保留；Prettier 与差异空白检查通过。未执行 HBuilderX 或浏览器运行，App/Web 空态实际滚动仍需复测；未创建临时脚本。
+
+## 2026-10-13 — 邀请金额缺失时调用 toFixed 报错
+
+-   **任务范围**：邀请奖励、收益汇总及已发放金额的展示格式化。
+-   **表现**：运行时出现 Cannot read properties of undefined (reading 'toFixed')。
+-   **根因**：formatInviteAmount 直接调用 toFixed，仅声明 number 类型并不能保证接口字段在运行期存在。
+-   **正确处理**：参数允许 null 并提供缺省值；在调用 toFixed 前拦截空值及非有限数，显示 --，保留有效零值。已发放列表仅为有效金额追加加号，避免 +--。
+-   **预防规则**：金额格式化必须区分缺失与有效零值，类型声明不能替代运行期空值检查；占位符不得继续拼接金额前缀。
+-   **验证结果**：直接执行实际函数，覆盖未传参、undefined、null、空字符串、NaN、无穷值、0、整数及小数；格式与差异空白检查通过。未运行 HBuilderX，App 接口缺失字段时的展示待联调；未新增临时脚本。
+
+## 2026-10-13 — Web 未设置提现密码却显示已设置
+
+-   **任务范围**：提现密码状态查询、设置页及提现前状态判断。
+-   **表现**：用户确认 Web 未设置密码却进入已设置状态。
+-   **根因边界**：状态接口使用 `unwrapResponseData<boolean>` 仅约束类型；通用请求层保留纯文本响应，字符串 `"false"` 在页面真假判断中为真。该错误分支已通过模拟确认；现场 Network 响应尚未提供，不能认定它是唯一原因。
+-   **正确处理**：在领域 API 边界保留真实布尔值，将纯文本 `true`/`false` 严格转换为布尔值；未知、空值和非布尔数据返回 null，交由现有错误态处理。
+-   **预防规则**：原始布尔接口的类型断言不能代替运行期解析；禁止使用 `Boolean(value)` 或真假值判断将字符串 false 识别为已配置，不修改通用文本响应规则。
+-   **验证结果**：实际 API 函数模拟覆盖布尔、纯文本、带 data 包装及空/异常值，12 项断言通过；Prettier 与差异空白检查通过。未运行 Web 实际页面或 HBuilderX，现场响应及页面分支仍需联调确认；未新增临时脚本。
+
+## 2026-10-14 — 邀请页刷新提示被状态栏和固定导航遮挡
+
+-   **任务范围**：邀请页外层 ScrollList 的下拉刷新提示与触发距离。
+-   **表现**：用户反馈 App 刷新文字超出手势距离；统一刷新阈值单位后仍未解决，进一步确认文字被状态栏遮挡。恢复导航占位后整页下移；按设备高度抵消后仍偏下，要求按原图顶部留白适配。
+-   **根因**：邀请页 Navbar 默认 fixed=true，却显式关闭 placeholder；外层 ScrollList 从页面顶端开始，刷新展示区位于状态栏和固定导航的覆盖范围。上一轮只处理 48px 阈值与 96rpx 展示高度的单位差异，未核对滚动视口起点。
+-   **正确处理**：恢复 Navbar 默认占位，由已有组件按实际 statusBarHeight + 48px 留出顶部空间，滚动区和刷新提示从导航栏下方开始。检查原图后，按设计稿顶部状态栏与导航栏区域约 176rpx 做显示裁切，海报绝对定位 top 和头部原 564rpx 留白同时扣除该值；清理页面读取设备导航高度及 Math.max 抵消逻辑，设备顶部尺寸仅由 Navbar 负责。不重绘或拉伸图片，保留 uni.rpx2px(96) 阈值换算，不修改公共组件、内层关联滚动或分页逻辑。
+-   **预防规则**：固定导航与外层下拉刷新组合时，必须区分滚动视口起点与设计内容起点；迁移原先覆盖式头图时，占位与头图、流式内容的坐标必须成对调整。先检查视口位置与遮挡，再检查刷新高度和阈值，不能靠增加手势距离补偿顶部遮挡。
+-   **验证结果**：检查原图及用户截图；执行实际页面样式初始化代码，验证不同屏宽下裁切区为 176rpx、卡片留白为 388rpx，规则入口距实际导航底部保持 20rpx，并确认旧设备高度抵消逻辑已清理；Prettier 和差异空白检查通过。未运行 HBuilderX，App 初始展示、刷新提示完整展示和回弹效果仍需真机复核。
+
+## 2026-10-13 — 提现密码页恢复后重复发送验证码
+
+-   **任务范围**：提现密码页面生命周期、专用短信请求与验证码倒计时。
+-   **表现**：初次发送后，隐藏页面再显示或重新进入页面，在原 60 秒冷却内再次发送；返回重置流程时还可能清除了已发送标记但仍被倒计时拦截。
+-   **根因**：每次 onShow 自动初始化并发送，onHide 将本地倒计时归零；发送锁和已发送标记只属于单个页面实例，页面重建后丢失。
+-   **正确处理**：当前登录会话内按手机号共享发送截止时间、已发送标记及在途 Promise，不保存短信码或密码。隐藏时仅暂停计时并清除敏感输入，重新显示按真实截止时间恢复；不同页面复用在途请求。密码重置成功后将验证码标记为已使用，但保留发送冷却。
+-   **预防规则**：短信冷却不能与页面生命周期共同归零；请求在页面卸载后成功也需保留发送截止时间，只有 UI 回写应受页面活跃状态限制。返回流程的输入清理与短信可用状态要分别管理。
+-   **验证结果**：实际逻辑模拟覆盖连续点击、隐藏恢复、页面重建、时间恢复、原短信继续输入、冷却到期、请求跨页面复用、失败重试和会话隔离；公共倒计时恢复与到期检查通过。Prettier 和差异空白检查通过；未运行 HBuilderX 或真实短信联调，App/Web 切后台恢复及后端限流仍需确认。未新增临时脚本。
+
+## 2026-10-14 — 切换账号重新登录提示停留过短
+
+-   **任务范围**：切换账号时凭据为空、身份不匹配及鉴权失败的提示。
+-   **表现**：用户反馈重新登录提示消失太快，将 `duration` 延长至 3500ms 后仍然一闪而过。
+-   **根因**：App 上 `rice-dialog` 默认使用 `dialogPage`；确认事件先于弹框真正关闭，凭据为空分支同步显示 Toast，使其绑定到正在离场的原生弹框。页面级 Toast 会随所属页面关闭而消失。异步鉴权失败也存在请求早于离场完成的竞态。源码和官方机制吻合，真机事件时序尚未采集。
+-   **正确处理**：取消三处短暂 Toast。按用户最终交互要求，失效时保持账号列表，不自动进入登录，使用独立的 `rice-dialog` 展示原因和“取消 / 重新登录”按钮；仅点击重新登录才打开预填手机号的登录面板。失效 dialog 设置 `use-dialog-page=false`，由业务页持有，不绑定正在离场的原生确认框；取消不改变当前会话。撤掉中间方案的登录面板 notice 插槽，不修改 Rice UI 源码或加入固定延时。
+-   **预防规则**：弹框确认后显示提示，先追踪提示绑定的原生页面与实际关闭时序；`show=false` 不代表页面已关闭，当前 Rice Dialog 的 `closed` 通知也先于 `uni.closeDialogPage`。需要用户据此继续操作的提示可以由下一步业务面板持有，不依赖增加 Toast 时长。
+-   **验证结果**：内存执行实际确认逻辑，覆盖空凭据、身份不匹配、400/401/403 和网络失败六种分支；失效后不自动打开登录、不提交会话，取消关闭提示，重新登录按钮打开预填手机号的面板，网络失败保留普通错误。确认短暂 Toast 和 notice 插槽已移除，Prettier 与差异空白检查通过；未运行 HBuilderX，App 两种 dialog 的交接、返回关闭及重新登录成功仍待真机确认。未创建临时脚本。
+-   **关联文件**：`pages/mine/composables/useAccountSwitch.uts`、`pages/mine/switch-account.uvue`、`pages/login/component/LoginPanel/index.uvue`。
+
+## 2026-10-20 — 视频预览全屏返回后画面消失
+
+-   **任务范围**：美摄自定义剪辑页的全屏往返与原生预览恢复。
+-   **表现**：用户反馈进入全屏后返回，原有预览视频不显示。
+-   **根因边界**：旧布局在固定高度与 auto/Flex 间切换，native-view 子节点依赖百分比高度；源码没有 Surface 尺寸变化后的时间线重连与暂停帧恢复。SDK 的 NvsLiveWindow 实际继承 SurfaceView，尺寸改变必须处理原生 Surface 生命周期；尚未采集用户现场 Surface 日志，不能据此认定唯一原因。
+-   **正确处理**：普通与全屏模式均明确计算预览高度，保留同一个 native-view；增加 NvsLiveWindow 子类，在真实 surfaceCreated/surfaceChanged 后校验当前会话、窗口及 Surface，再连接当前时间线并恢复暂停位置。页面恢复时也请求刷新，不用重绑组件或固定延时。
+-   **预防规则**：原生媒体窗口容器尺寸变化与页面响应式布局应分别验证；既要保证父子高度可解析，也要覆盖 Surface 重新创建、改变尺寸及暂停帧恢复，不能只检查界面状态或初始化成功。
+-   **验证结果**：HBuilderX 5.26 美摄模块编译成功；临时 Release/R8 宿主在 Android 10 / arm64 上验证 260→680→260 三次尺寸变化，PixelCopy 每次均读取到非黑画面。业务完整编译曾被现有 ling-launcher 缺少微信 SDK 依赖阻断，最终复跑另遇 Vapor 生成缓存 ENOENT；业务页面全屏按钮、Vapor 布局与手势仍需安装新自定义基座复测。临时宿主与产物已清理。
+
+## 2026-10-20 — 剪辑轨道 frames 运行时报错与已选素材无法横向滚动
+
+-   **任务范围**：`pages/clip` 的缩略帧计算、轨道展示和已选素材横向列表。
+-   **表现**：真机在轨道块构造处报 `ReferenceError: frames is not defined`；已选素材超过一屏仍无法横向滚动。
+-   **根因边界**：源码存在 `frames` 声明，但错误日志确认当前 Vapor bytecode 在嵌套循环后的对象简写处未正确读取该局部数组，不能归因于美摄解码或缺少授权；具体编译器作用域机制未确认。横向列表虽已显式横排，内容容器未设置实际溢出宽度，原生滚动边界没有独立的尺寸约束。
+-   **正确处理**：将可见帧计算提取为具名参数的独立纯函数，轨道块直接显式接收返回数组，取消该嵌套循环变量读取路径；已选内容宽度按条目宽度、间距和内边距计算，并明确视口宽度和条目不收缩。轨道常驻于工具面板外，采用连续缩略图、白色选中框/裁切手柄、居中播放头、末尾添加按钮和可点击音频入口，转场按钮避开裁切手柄。
+-   **预防规则**：普通 TypeScript/Node 逻辑模拟不能代表 Vapor bytecode 运行正常；遇到具名局部变量读取异常应先沿日志拆解作用域和对象构造，不改 SDK 或用空数组吞掉缩略帧。原生横向滚动同时检查视口宽度、内容宽度、条目尺寸与真实溢出，不能只设置横排方向。
+-   **验证结果**：实际 composable 源码模拟覆盖时长几何、裁切草稿与单次提交、长按排序、取消、原生滚动接管、缩放锚点、播放跟随、版本失效和定时器释放；UTS/SFC 类型模型、模板、格式与差异空白检查通过。按用户要求未执行构建、安装或设备操作，Vapor 运行时异常消除、横向滚动及截图交互仍需真机复测；未保留临时脚本。
+
+## 2026-10-20 — 轨道拖动读取空 revision、手柄偏移和工具入口无内容
+
+-   **任务范围**：自定义视频编辑页、轨道坐标与美摄命令序列化边界。
+-   **表现**：拖动轨道提示 `Value null at revision of type org.json.JSONObject$1`；横向滑动后手柄与缩略图错位；底部剪辑、转场、音乐没有打开可用内容，界面与参考图不一致。
+-   **根因与边界**：命令 revision 为可选属性，UTS 到 JSON 的边界可能产生显式 null，而原生仅判断 has 后调用 getInt，日志和源码读取路径吻合。手柄原先位于滚动内容外，通过响应式 scrollLeft 单独抵消原生偏移，存在两套坐标更新。工具切换仅修改 tab，旧面板又受固定轨道高度挤占；音频入口也仅改 tab，没有调用音乐弹框。具体设备上的滚动时序未重新采集。
+-   **正确处理**：页面命令补齐工程 revision；桥接显式过滤空可选字段，保留 0、false、空字符串；原生判断非 null 后继续版本校验。手柄移入缩略图所在原生滚动内容，默认隐藏，进入剪辑后按播放头所在片段显示，保留裁切草稿与单次提交。底部剪辑进入分割、镜像、删除工具栏；转场和音乐显式打开独立弹框。轨道仅保留一个播放头，增加音视频间距，添加按钮固定在视口右侧，衔接块打开当前转场。页面改为参考图的黑色布局并使用指定图标。
+-   **预防规则**：原生 JSON 读取可选字段必须区分缺失与显式 null，不以 has 代替非空检查；不能通过过滤真假值丢弃合法 0/false/空字符串。与原生滚动内容严格对齐的控件应共用内容坐标。工具入口检查实际弹框/面板是否可见及是否调用动作，不能只检查 tab 状态变化。源码模拟不能替代 Vapor 真机交互验收。
+-   **验证结果**：内存执行实际命令过滤函数、轨道 composable 与编辑页 controller，覆盖空值保留规则、过期版本拒绝、播放头选片、编辑模式手柄显隐、分割/镜像/删除命令、单个/全部转场、音乐入口、手势取消/提交及释放；UTS/SFC 具名模型、脚本与模板解析、格式和空白检查通过。按用户要求未构建、安装或操作设备；App 拖动异常消除、手柄同步、弹框命中与原生预览仍需真机确认。未创建或保留临时验证脚本。
+
+## 2026-10-20 — 剪辑标题发暗、原声入口与长片段手柄不符合预期
+
+-   **任务范围**：剪辑页标题、原声切换、裁切手柄、音频轨道和历史图标。
+-   **表现**：用户反馈标题像被遮挡，关闭原声没有切换，原声按钮固定在视口内；进入剪辑后看不到对应片段的裁切手柄，音频条缺少参考图的波形。
+-   **根因与边界**：Navbar 默认标题使用 rice-text，传入根节点的 color 不会覆盖内部 text 自身的深色样式；源码能确认文字颜色问题，未确认存在真实蒙层。原声按钮在滚动内容外且依赖 mode==idle，遗留滚动交互会拦截命令。长片段两端均可在视口外，真实边界手柄也随之不可见。此前只有音乐名称，没有波形数据接口。
+-   **正确处理**：通过页面 title 插槽直接显示白色 text，不修改公共 Navbar 或 Rice UI。原声入口放到第一段视频前的原生滚动内容中，点击先取消轨道交互，再切换原声音量；剪辑入口也清理遗留交互。长片段保留可见裁切入口，并避开右侧添加按钮，拖动按真实源区间提交。新增原生波形数据控制器，按当前 SDK 的有符号 byte 峰值编码提供真实波形，自定义页面只绘制可见范围并对应音乐截取/循环区间；异步回调校验任务与代次，退出时取消并释放。撤回/前进改用 revoke/replay rice-icon。
+-   **预防规则**：暗色页面不能仅给复合文字组件根节点设色，应核对内部 text 的独立样式。内容前置控件应与内容共同滚动，动作不能被已结束手势的遗留状态静默拦截。检查长素材在视口中部的可编辑性，不只检查片段首尾。波形使用真实媒体数据，不能用随机或固定曲线冒充；新增原生能力必须说明基座更新要求。
+-   **验证结果**：实际源码模拟覆盖原声 1→0→1、导出期拦截、滚动状态取消、长片段中部手柄可见且避开加号、裁切拖动、音乐截取区间映射、旧音乐波形隔离和旧基座缺失波形；UTS/SFC 具名类型、脚本和模板解析、格式与空白检查通过。使用 javap 只读核对当前 SDK JAR 的波形方法签名及 byte 编码，没有运行原生编译。按用户要求未构建、安装或操作设备；Vapor 点击命中、可见手柄和新基座真实波形需真机复测。未创建临时验证脚本。
+
+## 2026-10-21 — 素材选择页样式与裁切手柄真实边界修正
+
+-   **任务范围**：素材选择页展示及单视频主轨裁切手柄。
+-   **表现**：头部关闭图标未显示，选择圈、已选素材移除按钮及添加按钮与新设计不符；用户明确要求手柄位于视频段头尾，上一轮视口边缘吸附造成手柄间距受屏宽限制。
+-   **根因**：关闭按钮使用 Rice 图标表不存在的 close 名称；上一轮为让长片段手柄始终可见，对真实边界做视口 clamp，并保存投影位置，改变了手柄与实际视频段边界的对应关系。
+-   **正确处理**：使用现有 cross 图标；素材页改为白底文字来源标签、有间距的三列圆角缩略图、18px 编号选择圈、56px 已选缩略图和红底白色减号，添加按钮调整为小圆角矩形；底部新增仅展示的“导入素材”栏。保留现有全部/视频/照片、来源、预览、选择顺序、横向滚动、移除与提交行为。删除手柄视口吸附和投影状态，仅由对应片段真实 left/width 定位，边界超出屏幕时随滚动内容裁出；不改变源区间和单次提交规则。
+-   **预防规则**：Rice 图标名称先查字库，不凭其他组件库命名推断；裁切手柄表达媒体边界，不得为保证可见而投影到视口边缘。横向缩略图尺寸调整时同步更新内容宽度公式，保留真实溢出宽度。设计图没有但用户要求保留的分类与业务行为不得删改。
+-   **验证结果**：实际源码模拟覆盖 320/375/430px 下三列尺寸、20 项已选内容溢出、长片段手柄对应真实头尾、滚动不改变手柄内容坐标、裁切草稿与单次提交、跨片段选中和卸载清理；脚本/模板解析、具名模型、格式与空白检查通过。按用户要求未构建、安装或操作设备，App 图标显示、原生布局和真实拖动仍待复测；未创建临时验证脚本。
+
+### 后续修正：来源居中、已选移除位置与添加文字截断
+
+-   **表现与根因**：顶部来源标签与关闭按钮共用左起横排，标签组不在页面中心；已选素材移除按钮相对 64px 条目定位，而不是 56px 图片。添加按钮宽度缩小后仍保留 Rice Button 默认左右各 15px 内边距，文字可用宽度不足。
+-   **正确处理**：关闭按钮独立绝对定位，标签组用左右对称 48px 留白居中；移除按钮放入缩略图右上角并停止点击冒泡，避免触发预览。页面通过 customStyle 缩小按钮左右内边距，按已选数量位数调整宽度，不修改 Rice UI。预览页移除裁剪按钮、弹框和对应页面绑定，选择圈统一为 18px，保留播放、进度定位、编号选择和添加流程。
+-   **预防规则**：小按钮尺寸必须同时核对组件内部 padding；绝对定位控件直接归属其视觉锚点；含不对称侧边操作的居中标签组要留出对称空间。
+-   **验证结果**：两页 SFC 脚本/模板解析、格式、移除按钮父节点与停止冒泡结构检查，以及 0/1/9/10/99/100/999 项的添加按钮宽度计算通过；差异空白检查通过。按用户要求未构建或操作设备，App 实际居中、文字完整显示与点击命中仍待复测；未创建临时脚本。
+
+### 后续修正：取消按钮应跨在缩略图右上角
+
+-   **表现与根因**：用户再次明确设计图的红色减号跨在图片右上角边缘，上一轮把它放在图片裁切容器内部，形成完全内嵌的角标，与图不一致。
+-   **正确处理**：缩略图与取消按钮作为同一条目内的兄弟节点，各自显式绝对定位。56px 图片从条目顶部下移 8px，20px 点击区域位于条目右上角，14px 红色圆点跨越图片顶边及右边；图片继续裁切圆角，按钮不受图片 overflow:hidden 影响。横向滚动区域调整为 72px，为角标和图片保留完整空间。
+-   **预防规则**：区分“图片内部右上角”和“跨越图片右上角边缘”，按参考图确认角标与图片的相交关系；需要越界的角标不得放入图片裁切容器。
+-   **验证结果**：模板/脚本解析、兄弟覆盖层结构和格式检查通过；未构建或操作设备，App 实际叠放与点击仍需复测。未创建临时脚本。
+
+## 2026-10-21 — 创作页热门和最新角标被裁切
+
+-   **任务范围**：创作工具卡片的热门、最新图片角标。
+-   **不满意表现**：角标上半部分显示不完整。
+-   **根因**：角标作为圆角卡片的子节点，使用 `top: -22rpx` 越出卡片边界；原结构没有为角标提供完整的父级布局范围，触发原生裁切。
+-   **正确处理**：工具项增加无圆角外层，顶部预留 `22rpx`；卡片和角标作为兄弟节点，角标从外层 `top: 0` 定位，仍跨在卡片右上边缘，图片完整位于外层范围内。我的区域卡片保持原结构和交互。
+-   **预防规则**：跨越圆角卡片的角标应与卡片平级，父级明确预留装饰空间；不依赖负定位、溢出可见或提高层级绕过原生裁切。
+-   **验证结果**：页面模板解析、Prettier 和差异空白检查通过；静态尺寸计算覆盖 320/375/430px，角标完整位于外层且与卡片顶边相交。按用户要求未构建或操作设备，Android/iOS 实际显示待真机复测；未创建临时验证脚本。
+-   **关联文件**：`pages/creation/index.uvue`。
+
+## 2026-10-21 — 剪辑预览 Activity 泄漏、播放跟随卡顿与音频拖动回弹
+
+-   **任务范围**：美摄预览释放、时间轴播放和触摸、头部按钮状态及首次导入历史。
+-   **表现**：用户日志报告约 155kB Activity 引用泄漏；播放轨道移动卡顿，拖动音频条时被拉回；拖动会禁用导出/撤回，首次导入能撤回到空工程。用户确认有音乐时只显示波形，无音乐时居中显示添加音频。
+-   **根因**：日志明确显示 ProxyModule 静态映射持有 MeishePreview，其非空 view 字段继续指向已销毁 Activity 的 MeisheLiveWindow；原释放仅解除原生全局窗口，没有清空 UTS 字段。播放仅按 300ms 轮询跳动，缩略图/刻度/波形还依赖每次 scrollLeft 重建；音频条阻止 touchstart/touchend 冒泡，轨道没有进入用户拖动状态，随后被位置轮询复位。按钮共用含 timelineActive 的 busy，导入默认记录空工程快照。
+-   **正确处理**：UTS 预览释放先清空 View 引用并幂等释放，绑定异常释放窗口，组件卸载前/后均释放，原生退出清空窗口。SDK 状态保持权威，页面在轮询间使用 32ms 本地时钟平滑跟随，不增加 seek；重型绘制数据按 48px 缓冲窗口计算，旧程序滚动回调不覆盖播放时钟。音频条恢复触摸冒泡；有音乐只显示波形，无音乐在可见区居中显示添加入口。区分操作忙状态和手势状态，拖动中导出/撤销按钮保持可用，点击通过取消令牌先丢弃未提交草稿，再执行操作。首次导入不记录空工程，后续追加/编辑仍记录历史。
+-   **预防规则**：原生代理释放需断开代理对象自身到 View/Activity 的强引用，不能只清理全局窗口或 JS 变量。播放展示插值不驱动 SDK seek，不按每帧反复构造媒体节点；拖动区域的触摸屏蔽必须与滚动状态机一起核对。交互忙状态不能直接作为所有操作的禁用条件，允许中断的操作应先取消草稿和待执行回调。首次导入与追加素材的撤销语义须明确区分。
+-   **验证结果**：执行实际 UTS 源码模拟，覆盖播放插值不调用 seek、缓冲窗口数据复用、音频拖动期间轮询不回弹、取消令牌丢弃草稿、隐藏/卸载计时器清理、代理对象持续被持有时 View 字段清空、重复释放、绑定与释放异常，以及真实头部导出/撤销处理和操作忙态拦截；检查两处原生导入基线规则。7 个 UTS/SFC 具名模型、脚本/模板解析、格式与空白检查通过。按用户要求未构建、安装或操作设备，未执行原生编译、LeakCanary 复检或帧率测量；原生泄漏/首次导入修正需更新基座后复测。没有创建临时脚本，未修改 unpackage 日志或生成物。
+
+## 2026-10-21 — 切换背景音乐导致视频预览闪烁
+
+-   **任务范围**：剪辑图标、片段音量、无蒙层转场面板及音乐切换。
+-   **表现**：切换音乐时视频画面闪烁；转场面板需要保留视频和播放操作栏可见，轨道手势不应使底部工具变灰。
+-   **根因**：音乐命令复用完整 rebuild，重建视频时间线并重新绑定 LiveWindow；纯音频修改因此触发视频预览重连。底部工具混用了包含手势状态的 busy。
+-   **正确处理**：音乐命令及纯音乐历史恢复仅替换当前时间线音频轨道，新轨道添加成功后移除旧轨道，失败清理候选轨道并保留旧工程；保留视频时间线、窗口及播放位置。工具使用实际操作忙状态，执行前取消轨道草稿。片段音量通过稳定 ID 和版本提交，草稿取消不改变工程。转场放在预览/操作栏下方的普通布局中，提供真实名称搜索；SDK 无分类元数据，不虚构分类。
+-   **预防规则**：纯音频编辑应与视频结构重建分离；媒体窗口所有权和绑定不随无关状态切换。将手势草稿和操作忙态分开；确认类面板保存目标 ID 和工程版本，防止改到其他片段。
+-   **验证结果**：8 个 UTS/SFC 具名模型、脚本/模板解析通过；实际源码模拟覆盖音量草稿/确认、拖动中提交和过期版本、转场名称搜索及忙态拦截；核对原生音频替换顺序、无视频重连调用和现有 SDK JAR 方法签名。未构建、编译原生、安装或操作设备，画面闪烁与界面效果须更新自定义基座后真机确认；没有创建临时脚本。
+
+## 2026-10-21 — 播放轨道周期跳动与控件显示修正
+
+-   **任务范围**：音频轨道提示、衔接状态、片段音量范围及播放轨道平移。
+-   **表现**：音频提示不应居中；所有衔接都显示已添加转场的图标；音量上限需要 100；播放轨道仍存在分段移动感。
+-   **根因**：音频提示按可见区动态居中；转场图标未判断片段 transition；音量按原示例设为 1000；虽有 32ms 插值，但每次 SDK 轮询仍强制滚动到采样位置，打断连续跟随。
+-   **正确处理**：音频文字固定于轨道起点并随内容滚动；空 transition 显示原短线，非空才显示转场图标。面板和提交双重限制 0–100。播放通过 requestAnimationFrame 逐帧平移，普通采样只更新目标时钟，小误差逐帧收敛且保持前进；暂停和明显跳转立即定位，隐藏/卸载取消帧回调，不新增 SDK seek。
+-   **预防规则**：低频权威数据校准不能直接覆盖连续动画的位置；帧循环与状态轮询职责分离，并验证轮询边界不倒退。图标需反映真实状态；界面范围与提交范围须同时调整。
+-   **验证结果**：4 个 UTS/SFC 模型、脚本/模板解析通过；实际源码模拟 120 帧并注入延迟的 SDK 轮询，检查单调平移、无轮询直接跳位、跳转、暂停、隐藏和卸载清理，以及模板状态和音量范围。按用户要求未构建或操作设备，App 实际帧率与样式仍需真机确认；未创建临时脚本。
+
+## 2026-10-21 — 轨道单击应进入所选片段编辑
+
+-   **任务范围**：视频与音频轨道点击、选中状态和编辑工具。
+-   **表现**：点击视频片段会跳到点击帧，音频条直接打开音乐列表，无法就地编辑已添加音乐。
+-   **根因**：press 结束同时执行 select 和 seek；选框又独立按播放头计算，暂停轮询及程序滚动通知会覆盖手动选中。音频点击未区分已有音乐与空轨道。
+-   **正确处理**：单击命中视频发送独立 edit 事件，保持播放位置；手柄按 selectedId 定位，仅播放或用户滑动时跟随播放头。已有音频单击进入编辑工具，复用现有音量、截取、淡入淡出、更换和删除接口；空轨道保留添加音乐入口。音频与视频共用 press/scroll 判定，拖动不当作单击。
+-   **预防规则**：点击选中与滑动定位分开建模；选中状态只保留一个来源，不能在暂停轮询或程序滚动中无条件重算。轨道已存在的素材和空入口应区分行为。
+-   **验证结果**：5 个 UTS/SFC 模型、脚本/模板检查通过；实际源码模拟覆盖非播放头片段单击不 seek、暂停轮询/延迟滚动保留选中、拖动定位不触发编辑、音频音量/截取/淡入淡出/更换/删除、空轨道添加及忙态拦截。未构建、安装或操作设备，App 原生滚动接管和点击/长按行为待真机确认；未创建临时脚本，未改动 SDK 插件。
+
+## 2026-10-21 — 音频片段列表缺失导致轨道 reduce 报错
+
+-   **任务范围**：音频分割引入的 musicClips 状态接收。
+-   **表现**：轨道渲染提示 Cannot read properties of undefined (reading 'reduce')。
+-   **根因**：轨道直接调用 props.musicClips.reduce/map，旧基座仅返回单个 music，页面接收结果时覆盖了初始空数组；相同版本的缓存复用还可能把缺失字段再次写回。此前源码模拟只覆盖新基座的完整返回，没有覆盖旧返回结构。
+-   **正确处理**：在页面 accept 状态入口把缺失或 null 的 musicClips 转换为旧 music 的单元素列表，无音乐时转换为空列表；复用缓存时保留已经规范化的结果，不重新写入 undefined。兼容范围只覆盖已知旧单音乐返回，不伪造分割等原生能力。
+-   **预防规则**：原生接口新增集合字段时，初始化、轮询、编辑和失败返回都应经过同一状态规范化入口；验证必须覆盖缺失字段、null、空集合和相同版本缓存。旧基座兼容显示与新原生功能可用性应明确区分。
+-   **验证结果**：实际源码模拟覆盖缺失/null 列表、旧单音乐/无音乐状态、相同版本缺失缓存，以及真实轨道 reduce/map 渲染；相关 9 个 UTS/SFC 模型与脚本/模板检查通过。未构建、安装或操作设备，未创建临时脚本；仅修改页面状态入口，没有修改插件。
+
+## 2026-10-21 — 音频路径未统一导致波形不显示
+
+-   **任务范围**：Android 美摄桥接返回的音乐片段路径。
+-   **表现**：音频轨道存在，但波形不显示；仅重新打基座不能修复遗漏的路径转换。
+-   **根因**：parseState 已把 music.path 转换为框架缓存路径，却遗漏新增的 musicClips[].path。轨道按片段路径与选中音乐路径匹配波形，原生绝对路径与框架路径不同，导致已解码的波形也被跳过。此前模拟使用相同路径的手工数据，未贯通真实桥接转换。
+-   **正确处理**：在同一状态转换入口为音乐片段列表逐项调用现有 frameworkPath，保持与选中音乐相同的路径协议；保留旧基座缺少列表字段的判断和缓存目录校验，不在视图层绕过源文件匹配。
+-   **预防规则**：媒体模型从单对象扩展为列表时，必须同步检查所有路径字段的边界转换；验证应从实际原生返回经过实际解析函数再进入实际轨道绘制逻辑，不能只使用提前规范化的手工视图数据。
+-   **验证结果**：实际 parseState → useClipTimeline 的源码模拟通过，覆盖选中音乐与同源分割片段产生非空波形条、缺少列表的旧返回、空列表和非法缓存路径拦截，UTS 解析及具名类型检查通过。按要求未构建、安装或操作设备；本次修改 Android UTS 插件，需要更新自定义基座后真机确认。未创建临时脚本。
+
+## 2026-10-21 — 切换转场与原声开关造成预览闪烁
+
+-   **任务范围**：转场、原声音量、相关编辑历史和转场 Popup 预览。
+-   **表现**：切换转场和关闭/打开原声时视频预览闪烁；选择转场需要直接查看相邻视频的衔接效果。
+-   **根因**：转场和 originalVolume 命令仍调用完整 rebuild，重新创建时间线、绑定 LiveWindow 并恢复位置；页面应用转场后又额外 seek，造成连续画面重定位。仅修复音乐轨道替换没有覆盖这些独立命令及其历史路径。
+-   **正确处理**：原轨道直接设置转场和各视频片段音量，成功后记一次历史，失败尝试恢复原属性；纯转场/原声音量撤销与重做也直接修改。原声开关不停止或定位播放。转场更新后通过 SDK 播放相邻片段内的短区间，重复选择和时长修改重播；关闭 Popup 恢复打开前的位置，隐藏/卸载/手势接管时跳过恢复。全局应用作为一次性操作，保留固定文字和样式，以 toast 提示结果。
+-   **预防规则**：按属性编辑、轨道替换和结构重建区分原生命令；检查正向操作及撤销/重做是否重连预览。区间预览保留明确目标衔接，不因全局应用改变后续局部操作模式；避免页面与原生重复 seek。
+-   **验证结果**：3 个 UTS/SFC 具名类型、脚本及模板解析通过；实际控制器/Popup 源码模拟覆盖局部与全局目标、成功/失败提示、重复选择、时长修改、关闭位置恢复和手势/隐藏保护。核对原生无时间线重建路径、音量分支不 stop/seek、失败回滚、SDK JAR 签名及区间表达式；未编译或运行 Kotlin。按要求未构建、安装或操作设备，没有创建临时脚本；需要更新 Android 自定义基座后确认实际预览闪烁与衔接效果。
+
+## 2026-10-21 — 长按排序应保留时间线其他内容
+
+-   **任务范围**：视频段首帧卡片排序展示与横向手势。
+-   **表现**：首帧排序时隐藏了刻度、音轨、播放头等内容，拖动卡片还浮起到轨道上方，与用户提供的参考效果不符。
+-   **根因**：将局部视频排序误作独立排序界面，复用整条时间线滚动承载卡片移动，因而隐藏其他内容避免坐标冲突。
+-   **正确处理**：保留刻度、音轨、原声入口、播放头和添加按钮；视频卡片独立保存横向排序偏移，不改变时间线实际滚动位置。拖动卡片固定在视频轨道的高度，仅采集横坐标换序；边缘滚动也只改变卡片偏移。松手一次提交顺序，取消恢复原序列，均恢复原视频轨道宽度。
+-   **预防规则**：局部轨道的临时交互只改变该轨道的展示和坐标，不应无依据隐藏其他轨道或重排整页；检查拖拽前后音频和刻度的位置及可见性。
+-   **验证结果**：实际 composable 源码模拟覆盖首帧缓存、长短视频等宽卡片、横向换序、上下移动不影响位置、刻度/音轨/实际滚动位置保留、边缘自动换序、一次提交与取消恢复；UTS 具名类型、脚本和模板解析通过。按要求未构建、安装或操作设备，未创建临时脚本；App 长按触摸传递及层叠效果仍需真机确认。未修改原生 SDK。
+
+## 2026-10-21 — 首次长按排序的触摸连续性与空音轨宽度
+
+-   **任务范围**：视频首帧排序手势及空音轨入口。
+-   **表现**：用户反馈第一次长按无法继续拖动，松手再长按才可拖动；刚进入编辑页时添加音频文字换行。
+-   **根因与证据**：源码中长按会将缩略帧子节点替换为首帧节点，同时 direction 从 horizontal 切到 none；原触摸目标与原生滚动处理方式均在同一手势内变化，存在触摸中断风险。空音轨最小宽度仅 30px，初始无时长或短视频时不足以承载文字。首次长按的具体原生事件序列尚未真机采集。
+-   **正确处理**：视频段使用稳定且覆盖卡片的独立触摸节点接收开始、长按、移动、结束和取消；排序保持横向滚动方向，通过 move 的 preventDefault 阻止默认滚动，保留真实 touchcancel 的清理行为。空音轨最小宽度设为 120px，添加音频文字限制单行，已有音频仍按实际时长显示。
+-   **预防规则**：持续手势期间保留触摸目标节点；缩略图展示变化与触摸接收分离，避免同一手势内重新交接原生滚动。模拟需检查模板事件绑定与首次手势全流程，仍不能替代原生触摸验收。
+-   **验证结果**：实际 composable 源码模拟覆盖首次 start→longPress→move→end、排序期间阻止默认滚动、取消恢复、上下移动忽略、音轨/刻度保留、边缘换序，以及空视频/短视频下的 120px 最小音轨；检查稳定触摸层事件绑定、UTS 类型与脚本、模板解析和格式。未构建、安装或操作设备，没有创建临时脚本；首次长按连续性仍待 Android Vapor 真机确认。未修改原生 SDK。
+
+## 2026-10-21 — 节拍标记首次传入前遍历 undefined
+
+-   **任务范围**：新增节拍标记的轨道首次渲染。
+-   **表现**：用户在素材选择页点击添加后，编辑页尚未显示即报 undefined is not iterable；不是点击节拍后才出现。
+-   **根因与证据**：轨道新增 beatMarkers 属性没有默认值，beatDots 直接执行 for...of props.beatMarkers。实际 composable 源码在未传入该属性的初始化输入下可复现 iterable 错误；此前模拟始终提供完整标记数组，遗漏属性尚未传入的场景。该路径与用户描述一致，未取得设备完整调用栈。
+-   **正确处理**：轨道组件为 beatMarkers 提供独立空数组默认值；计算标记节点时先检查数组是否为空值，再进行遍历。稍后传入有效数组仍正常响应，不改动素材提交、原生导入和节拍保存逻辑。
+-   **预防规则**：页面新增传给子组件的集合属性，要覆盖首次属性绑定前、缺失、null、空集合和异步更新；验证不能只输入最终完整状态。
+-   **验证结果**：实际 useClipTimeline 源码模拟先复现修复前异常，再验证缺失/null/空列表及后续真实标记坐标；UTS 与 SFC 源码、具名模型和模板解析通过。按要求未构建、安装或操作设备，没有创建临时脚本；素材添加到编辑页的实际导航和首次渲染仍需真机确认。无需改动 SDK 或自定义基座。
+
+## 2026-10-21 — 节拍波形滚动频繁重建与标记预览未同步
+
+-   **任务范围**：节拍弹框波形、自动踩点外观和主音轨节拍点。
+-   **表现**：用户反馈波形滑动卡顿，添加点后主音轨不显示标记，自动踩点控件与原型不符。
+-   **根因与证据**：波形 computed 依赖逐帧 scrollPosition，每次滚动都会重建可见柱列表，scrollPosition 同时绑定 scroll-left，形成滚动通知回写。主音轨只读取已确认 tracks，弹框的 draftPoints 增删不会更新主音轨预览；原标记仅 4px，播放头覆盖后可辨识区域很小。开关使用胶囊式 Rice Switch，而原型是细线圆环控件。
+-   **正确处理**：整段波形按源数据一次构建，最多 1024 根柱并聚合峰值，计算不再依赖滚动位置；滚动通知仅记录普通数值，结束后定位一次，播放更新只驱动目标偏移。波形容器去除背景色；自动踩点改用短线圆环滑杆，保留展示交互和未接入提示。弹框打开时主音轨读取对应草稿，确认保存，取消恢复已确认标记；主音轨标记增为 6px。
+-   **预防规则**：原生滚动通知不要逐帧回写同一个 scroll-left；波形是固定源数据，应与视口平移分离。草稿预览应贯通实际父子组件数据链路，验证添加与删除的即时结果、确认保留和取消回退。
+-   **验证结果**：实际 useClipBeats → useClipTimeline 模拟覆盖即时增删、确认保留和取消回退；一小时波形限制 1024 根并保留峰值，500 次滚动通知复用同一波形数组且不回写目标偏移，结束仅一次 seek，播放位置变化不重建波形；UTS/SFC 源码、具名类型、模板与格式检查通过。未构建、安装或操作设备，没有创建临时脚本；真实帧率、开关样式及标记可见性仍需 Android Vapor 真机确认。未修改原生 SDK。
+
+## 2026-10-21 — 节拍快速滑动的按钮误判与位置回跳
+
+-   **任务范围**：节拍弹框指针、增删点和原生滚动事件。
+-   **表现**：快速滑动时添加/删除点按钮状态异常，滑动会突然定位到某个点。
+-   **根因与证据**：波形滑动使用本地偏移，但按钮与增删逻辑读取 SDK 位置；按钮又先结束滚动发出 seek，混用了不同时间采样。滚动结束后回写 scroll-left，SDK 暂停位置的延迟回报也能再次覆盖本地指针。节拍点 click 没有区分独立点击与拖动后补发事件。
+-   **正确处理**：按钮和增删操作共用波形本地指针，toggle 显式传入点击时的位置，不额外结束惯性或触发 seek。开始滑动暂停播放；惯性结束按 scrollend 最终偏移提交一次定位，不回写目标偏移。暂停时忽略 SDK 延迟位置，打开弹框与主动播放时恢复位置同步。区分手指按住、滑动、惯性结束和原生取消，拖动后屏蔽节拍点误点击，独立点击仍可定位。
+-   **预防规则**：同一次交互的展示状态与写入参数使用同一个位置源；暂停 SDK 轮询不能反向覆盖本地手势结果。手动操作、原生惯性与程序滚动分清所有权，并覆盖事件乱序，不能只模拟 start→scroll→scrollend。
+-   **验证结果**：实际 Popup 与 useClipBeats 联动模拟通过，覆盖 SDK 旧位置下按钮状态、快速增删的位置参数、惯性最终偏移一次定位、结束不回写 scroll-left、暂停旧位置忽略、拖动补发 click 拦截和独立点击恢复、scrollend 先于 touchend、touchend 后才收到 scroll、主动播放跟随及波形缓存复用。UTS/SFC 源码、具名类型、模板及差异检查通过；未构建、安装或操作设备，没有创建临时脚本。实际 Android Vapor 的快速拖动和惯性停止仍需真机确认，无需修改自定义基座。
+
+## 2026-10-23 — 混剪模型交叉类型触发 UTS 导出错误
+
+-   **任务范围**：工作流输入模型、混剪视频项模型与结果预览模型。
+-   **表现**：用户编译日志报告 `InputDataItem is not exported`，定位到 `useCreation.uts` 的类型导入。
+-   **根因与边界**：为拆分提交模型和页面字段，将原本直接声明的 `InputDataItem` 改成两个具名类型的交叉别名；源码有 export，但用户当前 UTS 编译链没有提供调用方所需的该模型导出。普通 TypeScript 语法解析和内存模拟不能验证 UTS 的跨模块模型生成；具体编译器内部机制未确认。
+-   **正确处理**：恢复 `InputDataItem` 的直接具名对象声明，同步展开本次新增的 `VideoListInputDataItem` 与 `SmartMixPreviewItem` 交叉类型。保留独立的请求模型及提交过滤，页面字段与请求字段仍然分离，不改变视频输入和结果契约。
+-   **预防规则**：当前工程新增或修改跨模块 UTS 数据模型时，优先直接声明具名对象；不能为复用字段将已有运行模型改成交叉类型别名，并把 TypeScript 解析通过当作 UTS 导出通过。
+-   **验证结果**：AST 检查确认相关模型均为直接导出的对象类型，页面模型包含请求模型全部字段，请求模型不含 key/Duration/duration；实际序列化函数模拟确认节点字段过滤及视频项空封面、空时长不变。Prettier 与差异空白检查通过；按用户此前要求未构建，UTS 编译错误消除仍待用户复跑确认。未创建临时脚本。
+-   **关联文件**：`api/workflow/types.uts`、`pages/creation/composables/useSmartMixResultPreview.uts`。
+
+## 2026-10-26 — 混剪默认参数被输入校验误处理
+
+-   **任务范围**：混剪确认页首次参数回显及数量、秒数输入。
+-   **表现**：用户反馈首次进入参数未回显，返回后再次进入才显示；越界输入需要显示对应限制值，不能清空。
+-   **根因与边界**：数量和秒数的 post 监听未区分初始化与用户输入，后台默认自定义范围超出配置上限时也会触发清空。表单默认值和 ready 在同一批次提交。已确认源码中的误清空路径；尚未取得设备渲染日志，不能据此断言首次空白的全部原因。
+-   **正确处理**：输入监听仅在 ready 后处理，初始化先填写默认值并等待 nextTick 提交，再展示表单；loading 期间不执行 onShow 的状态刷新。超过上限回填上限，低于下限失焦回填下限，保留多位数连续输入能力和提交验证。
+-   **预防规则**：表单校验区分后台回填与用户编辑；验证覆盖首次异步加载和缓存加载、默认值超出配置、输入多位数、上下限及重复初始化。nextTick 只表示状态提交，不能作为原生首帧绘制通过的依据。
+-   **验证结果**：实际控制器搭配 Vue ref/watch/nextTick 的内存模拟通过，覆盖冷/热加载、默认参数保留、加载期 onShow、上下限回填、多位数与空草稿及重复初始化；UTS 脚本、页面模板和格式检查通过。按要求未构建、未操作设备，App 首次回显及原生输入显示仍需真机复核；未创建临时脚本。
+
+## 2026-10-26 — 数字输入不应自动回填限制值
+
+-   **任务范围**：混剪确认页数字输入和占位提示。
+-   **表现**：用户指出越界数字先显示再回到限制值，要求直接保留输入；“最长秒数”“数量”等输入框占位提示需居中。
+-   **根因**：此前将保留越界输入理解为回填上下限，watch 和 blur 主动改写了草稿；输入文本居中与占位提示样式没有分别明确设置。
+-   **正确处理**：删除输入和失焦时的范围回填，保留实际草稿，提交校验仍阻止非法参数；秒数失焦只提示。通过 Rice Input 的 placeholder-style 显式设置数字输入占位提示居中，不修改组件库。
+-   **预防规则**：输入草稿、提交验证与按钮操作分开处理；用户要求保留越界数字时，校验不得写回草稿。检查占位提示和已输入文字各自的对齐配置。
+-   **验证结果**：实际逻辑与 Vue 监听模拟覆盖上下限、超大数、空值、失焦及非法提交，均保留原输入；页面三处数字输入占位样式、UTS/SFC 解析和差异空白检查通过。未构建、未操作设备，原生占位文字显示仍需真机确认；未创建临时脚本。
+
+## 2026-10-26 — 数字输入需直接显示边界值
+
+-   **任务范围**：混剪确认页数字上下限和起止时长。
+-   **表现**：用户进一步明确越界应直接显示限制值，且不能出现先显示越界数字再回跳的效果。
+-   **根因**：Rice Input 只将 input 字符串作为自定义事件发出，调用方通过 v-model/watch 修改值会产生第二次更新；此前将“不要回跳”处理成了保留越界数字，未满足最新明确的边界显示要求。
+-   **正确处理**：三个数字框采用内置 input，使用官方 input 事件返回字符串的机制，直接返回受配置约束的数字并同步表单，不修改组件库；起止时长倒置使用独立提示，失焦及提交均校验。
+-   **预防规则**：区分直接返回输入值与响应式二次回写；需要原生事件返回值时核对封装是否保留返回链。校验覆盖上下限、空草稿、小数、起止倒置与相等，不把普通 Vue 模板解析当作 App 输入显示验证。
+-   **验证结果**：实际事件处理函数模拟覆盖数量/秒数边界、小数、空值及区间顺序；模板编译结果保留事件表达式返回值，UTS/SFC 解析、格式和差异检查通过。未构建、未操作设备，无回跳效果仍需 Android/iOS 真机确认；未创建临时脚本。
+
+## 2026-10-26 — 原生数字输入显示与初次回填未贯通
+
+-   **任务范围**：确认页首轮回填、越界值显示和提示。
+-   **表现**：用户实际反馈初次进入仍无数据显示、输入越界没有提示且没有显示限制值。
+-   **根因与边界**：上一版处理函数仅更新 ref 并返回字符串，遗漏 showToast；用户环境下事件返回值未使原生输入显示规范值。同一限制值连续输入时 ref 不变，也不会触发属性更新。此前 nextTick 运行时 v-else 表单仍未挂载，不能证明原生输入已就绪；首次空白完整原生链路尚未取得日志确认。
+-   **正确处理**：通过官方 UniInputElement.value 同步事件目标，同时更新业务字段并返回规范值；越界和非法数字均提示。onLoad 保存会话，onReady 初始化；表单和自定义输入使用 v-show 保留节点，先回填再显示，不使用延时或动态 key 重建。
+-   **预防规则**：原生输入校验必须检查字段、真实输入节点和用户提示三条链路，覆盖字段未变但真实节点再次越界的情形。首次回填测试应明确节点在异步赋值前已挂载；JS 模拟和普通 Vue 编译不能替代 Vapor App 的原生行为验证。
+-   **验证结果**：实际控制器搭配 Vue 模拟冷/热初始化全部初始字段；连续两次超上限即使 ref 已是上限，事件目标仍更新为限制值，数量/秒数上下限和提示检查通过；稳定节点及 onReady 接入、UTS/SFC 解析和格式检查通过。按要求未构建、未操作设备，首次回填和原生输入即时显示仍需用户真机复核；未创建临时脚本。
+
+## 2026-10-26 — 连续越界需同步输入控件的当前值
+
+-   **任务范围**：数量及秒数连续越界后的显示。
+-   **表现**：用户反馈第一次越界显示限制值，后续越界不再显示限制值。
+-   **根因与边界**：此前验证只用普通对象模拟 input.value，遗漏“用户输入更新显示内容，而程序赋值仍按上次值去重”的控件行为。该模型下直接重复写限制值可复现用户表现；实际运行时内部缓存机制尚未取得原生日志确认。
+-   **正确处理**：在共用 writeNumberInput 中先写 event.detail.value，再写规范值，使控件当前值与本次输入同步；两次写入在同一同步事件内完成，保留提示和业务状态，不增加 nextTick、延时或 key 重建。
+-   **预防规则**：原生输入验证要区分可见文本和程序赋值缓存，覆盖同一输入框连续越界、原限制值与新限制值相同、上下限重复触发，不能只用普通对象赋值判定原生显示已修复。
+-   **验证结果**：使用按程序赋值去重且用户输入单独改变可见值的节点模型，先复现旧单次赋值失效，再验证实际数量/秒数处理函数连续上下限越界均更新显示并保留提示；UTS 解析、格式和差异检查通过。按要求未构建、未操作设备，实际 App 连续输入仍需真机复核；未创建临时脚本。
+
+## 2026-10-26 — 时长下限校验阻断连续输入
+
+-   **任务范围**：确认页数量和秒数校验时机。
+-   **表现**：输入 1 后立即变为 3，无法连续输入 15 等多位数。
+-   **根因**：input 事件即时套用秒数下限，未区分编辑草稿和完成输入。
+-   **正确处理**：input 只保存草稿和限制小数两位；blur 执行格式、范围、起止顺序检查并回填限制值、显示提示；提交保留完整校验。
+-   **预防规则**：有最小值的数字表单必须覆盖从空值逐字输入多位数的过程，业务下限校验放在失焦或提交阶段，不能只验证一次粘贴完整数字。
+-   **验证结果**：实际事件函数模拟覆盖 1→15→15.1→15.123、输入无提示、失焦连续上下限回填、数量及倒置区间提示，UTS/SFC 与格式检查通过。未构建、未操作设备，原生输入及失焦事件仍需真机复核；未创建临时脚本。
+
+## 2026-10-26 — 素材预览添加不应提交整个选择会话
+
+-   **任务范围**：素材预览页添加按钮。
+-   **表现**：预览页点击添加直接进入确认生成，用户要求加入素材列表并返回。
+-   **根因**：预览返回成功后调用 submitClipSelection，误将单项添加当作列表会话提交，还套用了整批最少数量校验。
+-   **正确处理**：当前素材未选时调用共用选择逻辑，保留上限校验；已选不重复添加。随后只返回选择列表，不提交会话、不检查整批下限，最终提交由列表页负责。
+-   **预防规则**：单项加入、列表调整和整批提交分别检查导航目标和校验范围；覆盖已有其他已选素材时加入当前项，不能只覆盖空列表。
+-   **验证结果**：实际 submit 源码模拟覆盖空列表、已有其他素材、当前已选、下限不足仍返回、上限拦截后留在预览及提交锁复位，UTS 解析和格式检查通过。按要求未构建，App 返回列表与选中状态待真机确认；未创建临时脚本。
+
+## 2026-10-27 — 混剪短素材提示按总时长判断
+
+-   **任务范围**：选择页添加按钮左侧的短时长提示。
+-   **表现**：单个短视频触发了提示，但全部素材的总时长已足够。
+-   **根因**：使用 some 检查单个素材，未按全部已选素材累计时长。
+-   **正确处理**：全部已选视频时长已知且合计不足 5 秒才提示；空选择、未知时长及普通剪辑不提示。
+-   **预防规则**：素材集合提示需明确单项或合计判定，覆盖存在短片但合计充足的场景。
+-   **验证结果**：实际 computed 模拟覆盖合计小于、等于、大于 5 秒、单项短但合计足够、空值与普通剪辑，格式检查通过；未构建、未操作设备，未创建临时脚本。
+
+## 2026-10-27 — 混剪进度比例与整批导出范围
+
+-   **任务范围**：混剪结果播放进度及全部导出。
+-   **表现**：用户反馈滑动进度条异常，并明确全部导出须包含全部生成视频，进度条不显示滑块。
+-   **根因与边界**：原 slider 用秒数作上限、固定步长 0.1，与两位小数时长不一定整除，短于 1 秒时还被 Math.max(1, duration) 改变比例；播放页切换后旧拖动释放也可能误定位新页。原成功集合同时统计单项下载，导致完整导出可能跳过曾单独下载的项目。原生显示问题仍需设备复核。
+-   **正确处理**：混剪 slider 改为 0–1000 整数比例并换算秒数，保留隐藏滑块和拖动定位；按视频键隔离拖动释放，同步重置切换状态。共用播放 composable 增加数值定位方法，旧秒数事件入口保持行为。单项下载不写入批次成功集合，新批次完整遍历生成列表，只有失败重试跳过成功项。
+-   **预防规则**：进度显示应验证非步长倍数及小于 1 秒的视频；跨视频切换覆盖未释放拖动和迟到事件。整批操作必须测试先执行单项操作再执行全部，避免复用状态改变处理范围。
+-   **验证结果**：实际播放及结果控制器模拟覆盖小数/亚秒时长的比例、拖动期间旧时间回调、切页迟到释放、隐藏滑块、先单项后全部、完成后再次全量导出及失败重试；旧秒数定位入口、UTS/SFC、格式检查通过。未构建、未操作设备，实际进度绘制及保存全部视频仍需真机联调；未创建临时脚本。
+
+## 2026-10-27 — 混剪结果显隐触发当前卡片缩放
+
+-   **任务范围**：混剪结果轮播卡片的页面隐藏与恢复。
+-   **表现**：当前预览视频在页面显隐切换时缩小再恢复，出现缩放感。
+-   **根因**：卡片缩放与播放器共用 active；页面隐藏使当前卡片也被当作相邻项缩小。
+-   **正确处理**：新增 selected 属性，仅由当前选中位置决定缩放；active 继续由页面可见且当前选中决定，保留原播放器释放逻辑。
+-   **预防规则**：视觉选中状态与媒体激活状态独立建模，不能用页面可见性决定卡片尺寸。
+-   **验证结果**：源码表达式检查覆盖当前项、相邻项在隐藏和恢复时缩放样式不变；SFC 解析和格式检查通过。未构建、未操作设备，原生页面切换显示仍需真机确认；未创建临时脚本。
+
+## 2026-10-27 — 混剪当前卡片需显式恢复缩放
+
+-   **任务范围**：混剪轮播当前项恢复完整尺寸。
+-   **表现**：拆分选中与激活状态后，用户反馈当前激活视频没有放大。
+-   **根因与边界**：上一版选中分支仅移除缩小 class，没有显式写回 scale(1)，静态检查遗漏了缩放复位；原生残留情况未通过设备验证。
+-   **正确处理**：使用同一动态 transform，选中明确设置 scale(1)，非选中设置 scale(0.92)，继续独立于页面显隐状态。
+-   **预防规则**：原生视觉状态切换需同时声明进入与恢复值，不能仅用 class 移除推断属性复位成功。
+-   **验证结果**：表达式模拟覆盖重复选中切换及页面隐藏恢复，两种缩放值均明确写入；SFC 解析和格式检查通过。未构建、未操作设备，实际尺寸恢复仍需真机确认；未创建临时脚本。
+
+## 2026-10-27 — 混剪选中字段未进入运行时 props
+
+-   **任务范围**：当前视频与相邻视频的缩放差异。
+-   **表现**：显式设置缩放值后，用户仍反馈当前视频和周边视频一样大。
+-   **根因与边界**：只读检查现有 Android app-service.js，父组件传入 selected，UTS 类型模型也存在该字段，但子组件运行时 props 表缺少 selected。此前认为仅是缩放复位问题并不充分；增量类型解析缓存的具体机制尚未确认。
+-   **正确处理**：将仅本组件使用的具名 Prop 类型移到 content.uvue 内直接声明，移除外部重复声明，保持选中控制缩放、active 控制播放器的分工。
+-   **预防规则**：类型模型包含字段不能证明运行时 Prop 已注册；必须核对运行时 props 表，不能仅检查模板表达式。
+-   **验证结果**：隔离 Vue SFC 宏转换生成了包含 item、selected、active、muted 的运行时 props；检查时仅在内存展开外部 UTS emits 类型以供通用 Vue 编译器解析。重复选中、隐藏恢复表达式检查及格式检查通过。按用户要求未构建、未修改生成文件或缓存，App Vapor 实际编译产物与显示仍需下次运行确认；未创建临时脚本。
+
+## 2026-10-27 — 混剪页面显隐时中央播放图标闪烁
+
+-   **任务范围**：混剪当前预览的中央播放图标、控制栏间距和选中缩放过渡。
+-   **表现**：页面隐藏恢复时中央播放图标闪烁，用户要求收紧卡片至进度条的间距并增加少量缩放过渡。
+-   **根因**：原播放器节点及中央交互层均依赖 active 挂载；页面显隐重复拆装当前视频和图标。
+-   **正确处理**：仅当前选中卡片使用既有 keepVideoAlive，中央播放层在保活时保持挂载；隐藏前调用 pauseVideo 清除播放意图，返回保持暂停。非选中卡片不保活。控制栏高度收紧至 78rpx，缩放只针对 transform 设置 180ms 过渡。
+-   **预防规则**：页面可见性、轮播选中位置和播放意图分别管理；播放器保活时检查暂停、自动恢复和中央交互层是否一致，不能只保留视频节点。
+-   **验证结果**：表达式检查覆盖当前播放器与播放层在显隐过程中持续满足挂载条件、相邻项不激活、失败态不显示播放层；检查隐藏前暂停及清除播放意图、SFC/UTS 解析和格式通过。唯一 loadedmetadata 事件位于 WEB/MP-WEIXIN 条件块。未构建、未操作设备，实际间距、过渡与图标稳定性需真机确认；未创建临时脚本。
+
+## 2026-10-27 — 混剪显隐闪烁与间距修正
+
+-   **任务范围**：混剪当前预览视频、中央图标和控制栏间距。
+-   **表现**：用户反馈视频仍出现重建闪烁，且期望间距增大，上次却收紧了控制栏。
+-   **根因与边界**：上一版仅保活视频节点，但 active 仍随页面显隐变化，继续切换封面分支并重置部分播放状态；不能据节点挂载表达式稳定就断言原生画面稳定。间距需求方向理解错误，且没有明确的卡片下外部间隔。
+-   **正确处理**：混剪 MediaViewer.active 仅跟随 selected；页面隐藏仍由上层显式暂停并清除播放意图，事件转发仍检查页面 active。页面显隐不再触发 MediaViewer 的 active 监听或封面切换，切换选中项时正常释放旧播放器。撤回上一版对公共中央播放层条件的调整。控制栏新增 margin-top: 12px，保留 180ms 缩放过渡。
+-   **预防规则**：媒体闪烁检查须覆盖视频、封面、状态监听和交互层；页面生命周期暂停与媒体渲染激活分开处理。调整间距时使用明确的外部间隔，不用内部控件高度代替。
+-   **验证结果**：多次显隐表达式检查中，选中项媒体 active 始终为 true，视频与中央播放层挂载条件保持稳定，非选中项为 false；隐藏暂停、返回不自动播放、12px 间距和过渡配置检查及 SFC/UTS 解析通过。未构建、未操作设备，原生视频画面稳定性及实际间距仍需真机确认；未创建临时脚本。本条替代上一条处理方案。
+
+## 2026-10-27 — 混剪点击无响应与切回自动播放
+
+-   **任务范围**：MediaViewer 播放指令队列及混剪轮播切换。
+-   **表现**：点击视频没有反应，切换后又自动播放。
+-   **根因**：nextTick 指令因节点或请求版本变化直接返回，pendingPlaybackCommand 仍为 play，后续点击被重复指令检查拦截；非保活项失活时未清除手动播放意图，重新绑定节点又据此补发播放。已用实际函数模拟复现这条链路，原生触发时序未验证。
+-   **正确处理**：先隔离旧指令版本，当前指令失效才释放 pending 标记，避免旧回调清除新暂停指令；执行前再次检查播放意图。非保活项失活时将意图恢复为配置的 autoplay，混剪为 false；保活项沿用既有恢复语义。点击入口允许源尚未解析完成时记录播放意图。
+-   **预防规则**：指令取消必须处理待执行状态，区分过期指令和当前指令；轮播卸载与播放意图必须同步，不能仅重置 paused。
+-   **验证结果**：实际队列、播放、暂停、点击函数和 active 监听模拟覆盖旧节点/旧资源取消后重试、新暂停不被旧播放覆盖、取消意图不播放、手动切回不自动播放、提前点击及保活恢复，均通过；SFC 解析、格式及差异检查通过。loadedmetadata 仍仅在 WEB/MP-WEIXIN 条件块。未构建、未操作设备，点击和左右切换仍需真机确认；未创建临时脚本。
+
+## 2026-10-28 — 相册上传 MIME 误判与默认后缀
+
+-   **任务范围**：公共上传格式解析，覆盖混剪、本地相册、素材库及其他 UploadFile 入口。
+-   **表现**：选择支持的本地视频后提示“文件扩展名与实际格式不一致”。
+-   **根因**：原代码把系统 MIME 当作实际容器鉴定结果，未知 MIME 还会原样与扩展名比较；本地导出没有显式 format 时尤其容易误判。实际设备 MIME 尚未抓取，但该误判分支已通过函数模拟复现。
+-   **正确处理**：补充格式别名，未知 MIME 忽略，已识别 MIME 只作兜底，不单独触发冲突。保留文件名与显式 format 的冲突检查及业务场景白名单。按用户要求无格式信息时视频用 mp4、图片用 jpg，临时 tmp/temp 不视为实际容器；图片 getImageInfo 失败继续走公共兜底。
+-   **预防规则**：文件名、系统 MIME 和文件内容检测应区分可信度，不能将系统元数据冲突直接解释为文件内容错误；默认后缀是命名兜底，不是转码，也不能掩盖明确不支持的格式。
+-   **验证结果**：实际解析函数和上传控制器模拟覆盖 MIME 别名、未知及冲突 MIME、MP4/JPG 兜底、临时路径、显式格式冲突、素材库/混剪隔离及图片信息读取失败，通过语法与格式检查。OSS 传输和 UTS 表单仅在内存中模拟，未实际上传、未构建、未操作设备；原生选择上传仍需真机确认，未创建临时脚本。

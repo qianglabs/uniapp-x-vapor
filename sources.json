@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-28",
+  "repository": "D:/shuncheng/project/uniapp/jinnin-app",
+  "head": "49978ce795e0af5fa977a4ecd5a3513b9c9c7aae",
+  "initialGitStatus": "clean",
+  "hbuilderxVersion": null,
+  "playgroundVersion": null,
+  "packageJsonExists": false,
+  "clipProvider": "none",
+  "officialCheckedAt": "2026-10-28",
+  "officialSources": [
+    {
+      "title": "介绍",
+      "url": "https://doc.dcloud.net.cn/uni-app-x/"
+    },
+    {
+      "title": "Vapor",
+      "url": "https://doc.dcloud.net.cn/uni-app-x/app-vapor.html"
+    },
+    {
+      "title": "CSS",
+      "url": "https://doc.dcloud.net.cn/uni-app-x/css/"
+    },
+    {
+      "title": "圆角",
+      "url": "https://uniapp.dcloud.net.cn/uni-app-x/css/border-radius"
+    },
+    {
+      "title": "背景",
+      "url": "https://doc.dcloud.net.cn/uni-app-x/css/background-image.html"
+    },
+    {
+      "title": "滚动",
+      "url": "https://doc.dcloud.net.cn/uni-app-x/component/scroll-view"
+    },
+    {
+      "title": "弹层",
+      "url": "https://doc.dcloud.net.cn/uni-app-x/component/page-container.html"
+    },
+    {
+      "title": "媒体",
+      "url": "https://doc.dcloud.net.cn/uni-app-x/component/video"
+    }
+  ],
+  "sourceFiles": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 13532,
+      "sha256": "5d7b47ee2a9da54ee932cd8641d840d6da588de209bff3904d12fc619dee5171",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "docs/conclusion.md",
+      "bytes": 299298,
+      "sha256": "0b15a03b5706a53f38c6882da587207b788e39d20e1df1cc20f5ee6458866acc",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "docs/uniapp-x-vapor-rules.md",
+      "bytes": 20343,
+      "sha256": "1e1fa8c5430f5f2a76275f1dee1ae0438fbba1908aac95d9e5a7bf98f15ef54c",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "docs/README.md",
+      "bytes": 6856,
+      "sha256": "bf8cfdc7ea04e0e254da2678e8f44ba9a13d37f823cec29f9dce8d7f42a96729",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "docs/clip-engine.md",
+      "bytes": 4475,
+      "sha256": "a7e0428cdf49bf2c5f8641066fa7cb814774e3b184afc19d36708a72e99f7699",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "docs/functional-pipelines.md",
+      "bytes": 33994,
+      "sha256": "15301fd3a891e97bc2ea2151668f3b1b0846073496135f21ac9c4f7f21b44ea2",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "docs/state-storage-and-events.md",
+      "bytes": 12730,
+      "sha256": "c58c29daf7690067422c6b7b01737684b032e25ef1eb2063ee4b6a94730e03bd",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "docs/realtime-socket.md",
+      "bytes": 8958,
+      "sha256": "fc5c59d530d786693c0c9abb2937143a593862a6f92d88db5783bfccde7a7ea1",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "docs/uniapp-x-migration-reference.md",
+      "bytes": 18240,
+      "sha256": "68cde03153100be16639c571cae6be096bbe90795bb6774355c4da57d946dfac",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "docs/api-map.md",
+      "bytes": 1623800,
+      "sha256": "199f5dd5d8afd14f116cf2018cf3627cd9455ad07f6893fc8ea56ee9fc8601ef",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 4608,
+      "sha256": "8f159bedeecfef2d9add546329f4acfe224ed6f5304b90141c0ce42ca2ca93c3",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "main.uts",
+      "bytes": 338,
+      "sha256": "2520840c63e4c0d3f82cc15c28352b285b01461117c0a735e1b7858c8c382000",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "App.uvue",
+      "bytes": 8609,
+      "sha256": "48307add94a55ef8ad5e9a3e00da1512c8d51ceae853e6ee9e00eedb35d090b3",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": ".prettierrc",
+      "bytes": 338,
+      "sha256": "d6776fa9c926d94907c380c170e41b1f45f961e58be51aca601bfd17a9c0c7e5",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": ".editorconfig",
+      "bytes": 145,
+      "sha256": "6b2074bb10aa8d4dbb22e4123f90e66e8cef6681bef9a3ede9fe68def2e98dee",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": ".hbuilderx/launch.json",
+      "bytes": 347,
+      "sha256": "2ea0c059184ed74b284d76391e3aea9b6735c5a7664f2b9dce783b0427ccf0b6",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "components/CellList/index.uvue",
+      "bytes": 8210,
+      "sha256": "9fe33af351b034927a65b0d356e21eb1018111316bbba20eef6a93124bfd2411",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "components/WaterflowList/index.uvue",
+      "bytes": 2764,
+      "sha256": "4fb1dd382ada878cb60863bda0fd65534a522e19a8d05e0b8cfa1e8192183acf",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "components/ScrollList/index.uvue",
+      "bytes": 3604,
+      "sha256": "0ec0829a4cefd06b9878455f3d2538db8545991d3a381b0eea61f8f684251265",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "components/Popup/index.uvue",
+      "bytes": 11706,
+      "sha256": "93047fd87a97c6632b29d0fba8210fa7c44ecd26d1207c422979c1d080795a54",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "components/Popup/types.uts",
+      "bytes": 532,
+      "sha256": "f7f6747db5eff8115316cdd165463edd36e75f0fd0f5bbdf44700d4345076aed",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "components/KeyboardPanel/index.uvue",
+      "bytes": 5777,
+      "sha256": "07271b746135257d08fa2d22723f0f666b71872f3dbad3108e424d8ebb82ab3a",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "components/MediaViewer/index.uvue",
+      "bytes": 27330,
+      "sha256": "3b8ebadd7a56e32268a0d6aac0fcaac5207f4003d863c802cc83afc5678fbcbe",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "components/MediaViewer/types.uts",
+      "bytes": 1135,
+      "sha256": "41e3385404a3ae2c8cdc19fb736161a6ede0dc90a4ac53faf66642c64d490cc3",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "components/SwiperViewer/index.uvue",
+      "bytes": 1651,
+      "sha256": "544d9764fdea33f4614f11ab334f4afa6841997a2afcc51cb3fc0f8a4a94d27b",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "composables/useListLoad.uts",
+      "bytes": 1060,
+      "sha256": "161fe5cce0a12bdc90f3a452f7cc5d834eeab809f2726189bd8a03f0adb092aa",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "composables/useMediaPreviewPlayback.uts",
+      "bytes": 4413,
+      "sha256": "34c243312646fbdefa57a6eaa626082c33a774d2ba5120d03a1507af50bde361",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "composables/useNativeAlbum.uts",
+      "bytes": 7656,
+      "sha256": "80c7e85900d28bf0df3f9f6d13d54dc649073f960fc6c7bf132691416a12adb5",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "composables/useOssUpload.uts",
+      "bytes": 11679,
+      "sha256": "fddc6d2fba113e5340c914246f0c4c84c23bb05f765add98665114683799a333",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "utils/request.uts",
+      "bytes": 15934,
+      "sha256": "199a39110beb5ed8d89339be9b6b7398235bdc1b29ca260610f3a00e64a73be0",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "utils/response.uts",
+      "bytes": 1443,
+      "sha256": "389ec3fb1bca796dd07b4d2cc5b3358514a8ba12b2807ba609add8e4db234a67",
+      "inspection": "相关节选/标题阅读"
+    },
+    {
+      "path": "utils/auth.uts",
+      "bytes": 3959,
+      "sha256": "08b3c7fb0dac9f0d178ee0a79888d9b119eeb4f43815637d7c9c91084dbf8559",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "utils/uploadFormat.uts",
+      "bytes": 4951,
+      "sha256": "533fcf3ca4c3c0f5f875cd005fc2fb4429002a6a9ff3e818f34f8cc8ed686961",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "utils/signalr.uts",
+      "bytes": 8007,
+      "sha256": "bea5a70d5e2a07dc4e33d5c0962d79abbce8e72f0a8d3c2c41978bcb3f19d0cc",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "stores/socket.uts",
+      "bytes": 6500,
+      "sha256": "0f1f23538627ad9e0781778401e2b8146fb35df2e3ca04112a50511ed0200d24",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "pages/clip/engine/config/index.uts",
+      "bytes": 287,
+      "sha256": "e2fffb8c89bb455db9508c386600510133c63f51506e30f10a44dbfd77648bb0",
+      "inspection": "原文阅读"
+    },
+    {
+      "path": "pages/clip/engine/types.uts",
+      "bytes": 2684,
+      "sha256": "8025076e58e5aa078a9e755bba47ebb320df22effddbaa4640f4e66fec027da2",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    },
+    {
+      "path": "uni_modules/rice-ui/components/rice-waterflow/rice-waterflow.uvue",
+      "bytes": 9753,
+      "sha256": "053d2d505400ba77aad00f71ff9e52643d164985d91732f687a1c1fadf15bd7a",
+      "inspection": "路径、符号或指纹定位；未声称全文审阅"
+    }
+  ],
+  "archives": [
+    {
+      "path": "uniapp-x-vapor/references/evidence/conclusion.md",
+      "source": "docs/conclusion.md",
+      "bytes": 299298,
+      "sha256": "0b15a03b5706a53f38c6882da587207b788e39d20e1df1cc20f5ee6458866acc",
+      "byteIdentical": true
+    },
+    {
+      "path": "uniapp-x-vapor/references/evidence/project-rules.md",
+      "source": "docs/uniapp-x-vapor-rules.md",
+      "bytes": 20343,
+      "sha256": "1e1fa8c5430f5f2a76275f1dee1ae0438fbba1908aac95d9e5a7bf98f15ef54c",
+      "byteIdentical": true
+    },
+    {
+      "path": "uniapp-x-vapor/references/evidence/AGENTS.md",
+      "source": "AGENTS.md",
+      "bytes": 13532,
+      "sha256": "5d7b47ee2a9da54ee932cd8641d840d6da588de209bff3904d12fc619dee5171",
+      "byteIdentical": true
+    },
+    {
+      "path": "uniapp-x-vapor/references/evidence/clip-engine.md",
+      "source": "docs/clip-engine.md",
+      "bytes": 4475,
+      "sha256": "a7e0428cdf49bf2c5f8641066fa7cb814774e3b184afc19d36708a72e99f7699",
+      "byteIdentical": true
+    }
+  ],
+  "limitations": [
+    "本次为知识整理，不是原生功能复测",
+    "官方内容为检索或相关页面读取，不是完整镜像",
+    "原始档案保留历史语义与原仓库链接上下文",
+    "关联参考项目本次未重新审阅或修改"
+  ]
+}
